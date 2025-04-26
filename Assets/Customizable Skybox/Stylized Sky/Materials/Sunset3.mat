@@ -2,20 +2,29 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!21 &2100000
 Material:
-  serializedVersion: 6
+  serializedVersion: 8
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Sunset3
   m_Shader: {fileID: 4800000, guid: eb3c6fb598ded4c71b8968e1c40a3b4d, type: 3}
-  m_ShaderKeywords: _HORIZONLINEBLENDMODE_ADD _SUNHALOBLENDMODE_ADD _VIEW_FINAL
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords:
+  - _ENABLEPLANETS_ON
+  - _ENABLESTARS_ON
+  - _HORIZONLINEBLENDMODE_ADD
+  - _SUNHALOBLENDMODE_ADD
+  - _VIEW_FINAL
   m_LightmapFlags: 0
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses: []
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -55,11 +64,14 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    m_Ints: []
     m_Floats:
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
+    - _EnablePlanets: 1
+    - _EnableStars: 1
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
@@ -70,10 +82,25 @@ Material:
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
+    - _Planet1Detail: 10
+    - _Planet1Size: 0.2
+    - _Planet1Speed: 0.1
+    - _Planet2RingSize: 3
+    - _Planet2RingWidth: 0.099
+    - _Planet2Size: 0.2
+    - _Planet2Speed: 0.1
+    - _Planet3Pattern: 10
+    - _Planet3Size: 0.2
+    - _Planet3Speed: 0.1
+    - _PlanetCount: 5
     - _SkyGradientExponent: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
+    - _StarDensity: 50
+    - _StarIntensity: 1
+    - _StarSize: 0.05
+    - _StarTwinkleSpeed: 3
     - _SunDiscContribution: 1
     - _SunDiscExponent: 100000
     - _SunDiscExponentSize: 100000
@@ -90,7 +117,25 @@ Material:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _HorizonLineColor: {r: 1, g: 0.50885606, b: 0.23921567, a: 0.6}
+    - _Planet1Color: {r: 0.19999996, g: 0.6, b: 0.9, a: 1}
+    - _Planet1Color1: {r: 0.5, g: 0.19999996, b: 0.09999997, a: 1}
+    - _Planet1Color2: {r: 0.8, g: 0.29999998, b: 0.09999997, a: 1}
+    - _Planet1Pos: {r: 0.5, g: 0.2, b: 0.3, a: 0}
+    - _Planet1Position: {r: 0.7, g: 0.3, b: 0.5, a: 0}
+    - _Planet2Color: {r: 0.9, g: 0.6, b: 0.19999996, a: 1}
+    - _Planet2Color1: {r: 0.19999996, g: 0.29999998, b: 0.8, a: 1}
+    - _Planet2Color2: {r: 0.7, g: 0.7, b: 0.9, a: 1}
+    - _Planet2Pos: {r: -0.03, g: 0.1, b: 0.63, a: 0}
+    - _Planet2Position: {r: 0.65, g: 0.84, b: 2.48, a: 0}
+    - _Planet3Color: {r: 0.5, g: 0.8, b: 0.29999998, a: 1}
+    - _Planet3Color1: {r: 0.09999997, g: 0.5, b: 0.19999996, a: 1}
+    - _Planet3Color2: {r: 0.19999996, g: 0.7, b: 0.29999998, a: 1}
+    - _Planet3Pos: {r: 3.95, g: 1.83, b: -9.57, a: 0}
+    - _Planet3Position: {r: -0.5, g: 0.4, b: 0.2, a: 0}
     - _SkyGradientBottom: {r: 0.38431376, g: 0.13333334, b: 0.20392159, a: 1}
     - _SkyGradientTop: {r: 0, g: 0, b: 0, a: 1}
+    - _StarColor: {r: 1, g: 1, b: 1, a: 1}
     - _SunDiscColor: {r: 1, g: 1, b: 1, a: 1}
     - _SunHaloColor: {r: 1, g: 0.37821245, b: 0.108490564, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

@@ -36,6 +36,7 @@ namespace Ashsvp
         public float SteerInput { get; private set; }
         public float AccelerationInput { get; private set; }
         public float HandbrakeInput { get; private set; }
+        public bool NitroInput { get; private set; }
 
 
         private void Update()
@@ -57,6 +58,7 @@ namespace Ashsvp
             SteerInput = Mathf.Abs(tempSteerInput) > 0 ? Mathf.Lerp(SteerInput, tempSteerInput, 15 * Time.deltaTime)
                 : Mathf.Lerp(SteerInput, tempSteerInput, 25 * Time.deltaTime);
             HandbrakeInput = tempHandbrakeInput;
+            NitroInput = Input.GetKey(KeyCode.LeftShift);
         }
 
         private float GetKeyboardSteerInput()

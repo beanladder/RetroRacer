@@ -22,15 +22,13 @@ namespace Ashsvp
         public float MaxSpeed = 200f;
         public float Acceleration;
         public AnimationCurve AccelerationCurve;
-        [Tooltip("Curve for acceleration adjustment based on incline angle")]
-        public AnimationCurve InclineAccelerationCurve = AnimationCurve.Constant(0, 1, 1); //Animation Curve for acceleration adjustment based on incline
+        public AnimationCurve InclineAccelerationCurve = AnimationCurve.Constant(0, 1, 1);
         public float MaxTurnAngle = 30f;
         public AnimationCurve turnCurve;
         public float brakeAcceleration = 50f;
         public float RollingResistance = 2f;
         public float driftFactor = 0.2f;
-        [Range(0, 90)]
-        public float maxDriftAngle = 60f;
+        [Range(0, 90)] public float maxDriftAngle = 60f;
         private float driftAngle;
         public float FrictionCoefficient = 1f;
         public float slopeSlideAngle = 30f;
@@ -42,14 +40,26 @@ namespace Ashsvp
         public float DownForce = 5;
         public float airAngularDrag = 0.2f;
 
+        [Header("Nitro System")]
+        public float nitroAccelerationMultiplier = 2f;
+        public float nitroMaxSpeedMultiplier = 1.5f;
+        public float nitroDuration = 3f;
+        public float nitroCooldown = 5f;
+        public float nitroDepletionRate = 0.3f;
+        public float nitroRefillRate = 0.1f;
+        [Range(0, 100)] public float currentNitro = 100f;
+        public bool isNitroActive;
+        public bool isNitroCooldown;
+        public ParticleSystem nitroParticles;
+        public AudioSource nitroSound;
+        private float originalAcceleration;
+        private float originalMaxSpeed;
 
         [Header("Visuals")]
         [Space(10)]
         public Transform VehicleBody;
-        [Range(0, 10)]
-        public float forwardBodyTilt = 3f;
-        [Range(0, 10)]
-        public float sidewaysBodyTilt = 3f;
+        [Range(0, 10)] public float forwardBodyTilt = 3f;
+        [Range(0, 10)] public float sidewaysBodyTilt = 3f;
         public GameObject WheelSkid;
         public GameObject SkidMarkController;
         public float wheelRadius;
@@ -58,12 +68,9 @@ namespace Ashsvp
         public Transform[] HardPoints = new Transform[4];
         public Transform[] Wheels;
 
-        [HideInInspector]
-        public Vector3 carVelocity;
+        [HideInInspector] public Vector3 carVelocity;
 
         [Header("Events")]
-        [Space(10)]
-
         public Vehicle_Events VehicleEvents;
 
         [Serializable]
@@ -72,54 +79,23 @@ namespace Ashsvp
             public UnityEvent OnTakeOff;
             public UnityEvent OnGrounded;
             public UnityEvent OnGearChange;
+            public UnityEvent OnNitroStart;
+            public UnityEvent OnNitroEnd;
         }
+
         private bool tempGroundedProperty;
-
-        [Header("Other Things")]
-        
         private RaycastHit[] wheelHits = new RaycastHit[4];
-
-        [HideInInspector]
-        public float steerInput, accelerationInput, handbrakeInput, rearTrack, wheelBase, ackermennLeftAngle, ackermennRightAngle;
-
+        [HideInInspector] public float steerInput, accelerationInput, handbrakeInput, rearTrack, wheelBase, ackermennLeftAngle, ackermennRightAngle;
         private Rigidbody rb;
-        [HideInInspector]
-        public Vector3 localVehicleVelocity;
+        [HideInInspector] public Vector3 localVehicleVelocity;
         private Vector3 lastVelocity;
         private int NumberOfGroundedWheels;
-        [HideInInspector]
-        public bool vehicleIsGrounded;
-
+        [HideInInspector] public bool vehicleIsGrounded;
         private float[] offset_Prev = new float[4];
-
-        [HideInInspector]
-        public bool CanDrive, CanAccelerate;
-
+        [HideInInspector] public bool CanDrive, CanAccelerate;
         private GearSystem GearSystem;
-
-
-        //Skidmarks
-        [HideInInspector]
-        public float[] forwardSlip = new float[4], slipCoeff = new float[4], skidTotal = new float[4];
+        [HideInInspector] public float[] forwardSlip = new float[4], slipCoeff = new float[4], skidTotal = new float[4];
         private WheelSkid[] wheelSkids = new WheelSkid[4];
-
-
-        //[Header("Engine")]
-        //public float engineRPM;
-        //public float maxEngineRPM = 6000f;
-        //public float minEngineRPM = 1000f;
-        //public float engineInertia = 0.3f;
-        //public float engineFrictionFactor = 0.25f;
-        //
-        //public AnimationCurve engineTorqueCurve =
-        //   new AnimationCurve(
-        //                         new Keyframe(0f, 50f), // Idle torque at 0 RPM
-        //                         new Keyframe(1500f, 200f), // Torque starts to increase
-        //                         new Keyframe(3000f, 300f), // Peak torque
-        //                         new Keyframe(4500f, 250f), // Torque starts to decrease
-        //                         new Keyframe(6000f, 150f)  // Torque at redline
-        //                     );
-
 
         void Awake()
         {
@@ -134,11 +110,12 @@ namespace Ashsvp
             rb = GetComponent<Rigidbody>();
             lastVelocity = Vector3.zero;
 
+            originalAcceleration = Acceleration;
+            originalMaxSpeed = MaxSpeed;
 
             for (int i = 0; i < Wheels.Length; i++)
             {
                 HardPoints[i].localPosition = new Vector3(Wheels[i].localPosition.x, 0, Wheels[i].localPosition.z);
-
                 wheelSkids[i] = Instantiate(WheelSkid, Wheels[i].GetChild(0)).GetComponent<WheelSkid>();
                 setWheelSkidvalues_Start(i, SkidMarkController_Self.GetComponent<Skidmarks>(), wheelRadius);
             }
@@ -150,11 +127,9 @@ namespace Ashsvp
             GearSystem = GetComponent<GearSystem>();
         }
 
-
         private void Start()
         {
             CentreOfMass_ground = (HardPoints[0].localPosition + HardPoints[1].localPosition + HardPoints[2].localPosition + HardPoints[3].localPosition) / 4;
-
             rb.centerOfMass = CentreOfMass_ground;
         }
 
@@ -179,6 +154,8 @@ namespace Ashsvp
                 handbrakeInput = 1;
             }
 
+            HandleNitroInput();
+            RefillNitro();
         }
 
         void FixedUpdate()
@@ -188,38 +165,19 @@ namespace Ashsvp
 
             AckermannSteering(steerInput);
 
-            // Calculate engine RPM
-            //CalculateEngineRPM();
-
-
-
-            //float suspensionForce = 0;
-            suspensionForce[0] = 0;
-            suspensionForce[1] = 0;
-            suspensionForce[2] = 0;
-            suspensionForce[3] = 0;
+            for (int i = 0; i < 4; i++) suspensionForce[i] = 0;
 
             for (int i = 0; i < Wheels.Length; i++)
             {
                 bool wheelIsGrounded = false;
-
                 AddSuspensionForce_2(HardPoints[i].position, Wheels[i], MaxSpringDistance, out wheelHits[i], out wheelIsGrounded, out suspensionForce[i], i);
-                //AddSuspensionForce(HardPoints[i].position, Wheels[i], MaxSpringDistance, out wheelHits[i], out wheelIsGrounded, out suspensionForce, i);
-
                 GroundedCheckPerWheel(wheelIsGrounded);
-
                 tireVisual(wheelIsGrounded, Wheels[i], HardPoints[i], wheelHits[i].distance, i);
                 setWheelSkidvalues_Update(i, skidTotal[i], wheelHits[i].point, wheelHits[i].normal);
-
             }
 
             float suspensionForce_hackSum = (suspensionForce[0] + suspensionForce[1] + suspensionForce[2] + suspensionForce[3]) / 4;
-
-            suspensionForce[0] = suspensionForce_hackSum;
-            suspensionForce[1] = suspensionForce_hackSum;
-            suspensionForce[2] = suspensionForce_hackSum;
-            suspensionForce[3] = suspensionForce_hackSum;
-
+            for (int i = 0; i < 4; i++) suspensionForce[i] = suspensionForce_hackSum;
 
             vehicleIsGrounded = (NumberOfGroundedWheels > 1);
 
@@ -230,78 +188,86 @@ namespace Ashsvp
                 brakeLogic(handbrakeInput);
                 bodyAnimation();
 
-                //AutoBalence
-                if (rb.centerOfMass != CentreOfMass_ground)
-                {
-                    rb.centerOfMass = CentreOfMass_ground;
-                }
-
-                //ground angular drag
+                if (rb.centerOfMass != CentreOfMass_ground) rb.centerOfMass = CentreOfMass_ground;
                 rb.angularDamping = 1;
-
-                //downforce
                 rb.AddForce(-transform.up * DownForce * rb.mass);
             }
             else
             {
-                if (rb.centerOfMass != CenterOfMass_air.localPosition)
-                {
-                    rb.centerOfMass = CenterOfMass_air.localPosition;
-                }
-
-                // air angular drag
+                if (rb.centerOfMass != CenterOfMass_air.localPosition) rb.centerOfMass = CenterOfMass_air.localPosition;
                 rb.angularDamping = airAngularDrag;
             }
 
-            //friction
             for (int i = 0; i < Wheels.Length; i++)
             {
-                if (i < 2)
-                {
-                    AddLateralFriction_2(HardPoints[i].position, Wheels[i], wheelHits[i], vehicleIsGrounded, 1, suspensionForce[i], i);
-                }
-                else
-                {
-                    if (handbrakeInput > 0.1f && driftAngle < maxDriftAngle)
-                    {
-                        AddLateralFriction_2(HardPoints[i].position, Wheels[i], wheelHits[i], vehicleIsGrounded, driftFactor, suspensionForce[i], i);
-                    }
-                    else
-                    {
-                        AddLateralFriction_2(HardPoints[i].position, Wheels[i], wheelHits[i], vehicleIsGrounded, 1, suspensionForce[i], i);
-                    }
-
-                }
+                float factor = (i < 2) ? 1f : (handbrakeInput > 0.1f && driftAngle < maxDriftAngle) ? driftFactor : 1f;
+                AddLateralFriction_2(HardPoints[i].position, Wheels[i], wheelHits[i], vehicleIsGrounded, factor, suspensionForce[i], i);
             }
 
+            NumberOfGroundedWheels = 0;
+            if (GroundedProperty != vehicleIsGrounded) GroundedProperty = vehicleIsGrounded;
+        }
 
-            NumberOfGroundedWheels = 0; //reset grounded int
-
-
-            //grounded property for event
-            if (GroundedProperty != vehicleIsGrounded)
+        void HandleNitroInput()
+        {
+            if (inputManager.NitroInput && currentNitro > 0 && !isNitroCooldown && vehicleIsGrounded && !isNitroActive)
             {
-                GroundedProperty = vehicleIsGrounded;
+                StartCoroutine(ActivateNitro());
+            }
+        }
+
+        void RefillNitro()
+        {
+            if (!isNitroActive && currentNitro < 100f && !isNitroCooldown)
+            {
+                currentNitro = Mathf.Clamp(currentNitro + (nitroRefillRate * Time.deltaTime), 0, 100f);
+            }
+        }
+
+        IEnumerator ActivateNitro()
+        {
+            isNitroActive = true;
+            VehicleEvents.OnNitroStart.Invoke();
+            
+            if(nitroParticles != null) nitroParticles.Play();
+            if(nitroSound != null) nitroSound.Play();
+            
+            float originalDrag = rb.linearDamping;
+            Acceleration *= nitroAccelerationMultiplier;
+            MaxSpeed *= nitroMaxSpeedMultiplier;
+            rb.linearDamping *= 0.5f;
+
+            float timer = nitroDuration;
+            while (timer > 0 && currentNitro > 0)
+            {
+                currentNitro -= nitroDepletionRate * Time.deltaTime;
+                timer -= Time.deltaTime;
+                yield return null;
             }
 
+            Acceleration = originalAcceleration;
+            MaxSpeed = originalMaxSpeed;
+            rb.linearDamping = originalDrag;
+            
+            if(nitroParticles != null) nitroParticles.Stop();
+            
+            isNitroActive = false;
+            isNitroCooldown = true;
+            VehicleEvents.OnNitroEnd.Invoke();
+            yield return new WaitForSeconds(nitroCooldown);
+            isNitroCooldown = false;
         }
 
         void AddAcceleration(float accelerationInput)
         {
-            // Calculate the angle between the vehicle's up axis and the world's up axis
             float angle = Vector3.Angle(transform.up, Vector3.up);
-
-            // Adjust the acceleration based on the angle using the InclineAccelerationCurve
-            float accelerationModifier = InclineAccelerationCurve.Evaluate(angle / 180f); // Assuming the curve is set up for a 0-1 range
-
-            // Modify the acceleration input
+            float accelerationModifier = InclineAccelerationCurve.Evaluate(angle / 180f);
             float adjustedAccelerationInput = accelerationInput * accelerationModifier;
-
 
             float deltaSpeed = Acceleration * adjustedAccelerationInput * Time.fixedDeltaTime;
             deltaSpeed = Mathf.Clamp(deltaSpeed, -MaxSpeed, MaxSpeed) * AccelerationCurve.Evaluate(Mathf.Abs(localVehicleVelocity.z / MaxSpeed));
 
-            if (adjustedAccelerationInput > 0 && localVehicleVelocity.z < 0 || adjustedAccelerationInput < 0 && localVehicleVelocity.z > 0)
+            if ((adjustedAccelerationInput > 0 && localVehicleVelocity.z < 0) || (adjustedAccelerationInput < 0 && localVehicleVelocity.z > 0))
             {
                 deltaSpeed = (1 + Mathf.Abs(localVehicleVelocity.z / MaxSpeed)) * Acceleration * adjustedAccelerationInput * Time.fixedDeltaTime;
             }
@@ -309,170 +275,61 @@ namespace Ashsvp
             {
                 rb.linearVelocity += transform.forward * deltaSpeed;
             }
-
         }
 
         void AddRollingResistance()
         {
             float localSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
-
             float deltaSpeed = RollingResistance * Time.fixedDeltaTime * Mathf.Clamp01(Mathf.Abs(localSpeed));
             deltaSpeed = Mathf.Clamp(deltaSpeed, -MaxSpeed, MaxSpeed);
+            
             if (accelerationInput == 0)
             {
-                if (localSpeed > 0)
-                {
-                    rb.linearVelocity -= transform.forward * deltaSpeed;
-                }
-                else
-                {
-                    rb.linearVelocity += transform.forward * deltaSpeed;
-                }
+                if (localSpeed > 0) rb.linearVelocity -= transform.forward * deltaSpeed;
+                else rb.linearVelocity += transform.forward * deltaSpeed;
             }
-
         }
 
         void brakeLogic(float brakeInput)
         {
             float localSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
-
             float deltaSpeed = brakeAcceleration * brakeInput * Time.fixedDeltaTime * Mathf.Clamp01(Mathf.Abs(localSpeed));
             deltaSpeed = Mathf.Clamp(deltaSpeed, -MaxSpeed, MaxSpeed);
-            if (localSpeed > 0)
-            {
-                rb.linearVelocity -= transform.forward * deltaSpeed;
-            }
-            else
-            {
-                rb.linearVelocity += transform.forward * deltaSpeed;
-            }
-
-        }
-
-        //Vector3[] wheelRelativeVel = new Vector3[4];
-
-        void AddSuspensionForce(Vector3 hardPoint, Transform wheel, float MaxSpringDistance, out RaycastHit wheelHit, out bool WheelIsGrounded, out float SuspensionForce, int WheelNum)
-        {
-            var direction = -transform.up;
-
-            // SphereCast to detect if the wheel is grounded
-            WheelIsGrounded = Physics.SphereCast(hardPoint + (transform.up * wheelRadius), wheelRadius, direction, out wheelHit, MaxSpringDistance);
-
-            if (WheelIsGrounded)
-            {
-                float springCompression = MaxSpringDistance - wheelHit.distance;
-                Vector3 springDirection = transform.up;
-                Vector3 wheelWorldVelocity = rb.GetPointVelocity(hardPoint);
-                float relativeVelocity = Vector3.Dot(springDirection, wheelWorldVelocity);
-
-                // Standard spring force calculation
-                float springForceMagnitude = springForce * springCompression;
-                float damperForceMagnitude = springDamper * relativeVelocity;
-                SuspensionForce = springForceMagnitude - damperForceMagnitude;
-
-                // Apply hard stop force if compression exceeds threshold
-                if (springCompression >= 0.3f && relativeVelocity > 0)
-                {
-                    //rb.velocity -= relativeVelocity * springDirection;
-                }
-
-                // Apply force only if the spring is compressed
-                if (springCompression > 0)
-                {
-                    rb.AddForceAtPosition(springDirection * SuspensionForce, hardPoint);
-                }
-            }
-            else
-            {
-                SuspensionForce = 0;
-            }
+            
+            if (localSpeed > 0) rb.linearVelocity -= transform.forward * deltaSpeed;
+            else rb.linearVelocity += transform.forward * deltaSpeed;
         }
 
         void AddSuspensionForce_2(Vector3 hardPoint, Transform wheel, float MaxSpringDistance, out RaycastHit wheelHit, out bool WheelIsGrounded, out float SuspensionForce, int WheelNum)
         {
             var direction = -transform.up;
+            WheelIsGrounded = Physics.SphereCast(hardPoint + (transform.up * wheelRadius), wheelRadius, direction, out wheelHit, MaxSpringDistance, ~0, QueryTriggerInteraction.Ignore);
 
-            if (Physics.SphereCast(hardPoint + (transform.up * wheelRadius), wheelRadius, direction, out wheelHit, MaxSpringDistance, ~0, QueryTriggerInteraction.Ignore))
-            {
-                WheelIsGrounded = true;
-            }
-            else
-            {
-                WheelIsGrounded = false;
-            }
-
-            // suspension spring force
             if (WheelIsGrounded)
             {
                 Vector3 springDir = wheelHit.normal;
-                //springDir = transform.up;
                 float offset = (MaxSpringDistance + 0.1f - wheelHit.distance) / (MaxSpringDistance - wheelRadius - 0.1f);
                 offset = Mathf.Clamp01(offset);
-
                 float vel = -((offset - offset_Prev[WheelNum]) / Time.fixedDeltaTime);
-
                 Vector3 wheelWorldVel = rb.GetPointVelocity(wheelHit.point);
                 float WheelVel = Vector3.Dot(transform.up, wheelWorldVel);
 
-
-
                 offset_Prev[WheelNum] = offset;
-                if (offset < 0.3f)
-                {
-                    vel = 0;
-                }
-                else if (vel < 0 && offset > 0.6f && WheelVel < 10)
-                {
-                    vel *= 10;
-                }
+                if (offset < 0.3f) vel = 0;
+                else if (vel < 0 && offset > 0.6f && WheelVel < 10) vel *= 10;
 
                 float TotalSpringForce = offset * offset * springForce;
                 float totalDampingForce = Mathf.Clamp(-(vel * springDamper), -0.25f * rb.mass * Mathf.Abs(WheelVel) / Time.fixedDeltaTime, 0.25f * rb.mass * Mathf.Abs(WheelVel) / Time.fixedDeltaTime);
-                if ((MaxSpringDistance + 0.1f - wheelHit.distance) < 0.1f)
-                {
-                    totalDampingForce = 0;
-                }
+                if ((MaxSpringDistance + 0.1f - wheelHit.distance) < 0.1f) totalDampingForce = 0;
                 float force = TotalSpringForce + totalDampingForce;
-
-
                 SuspensionForce = force;
-
                 Vector3 suspensionForce_vector = Vector3.Project(springDir, transform.up) * force;
-
                 rb.AddForceAtPosition(suspensionForce_vector, hardPoint);
-
-                //if (offset > 0.5f && WheelVel > 5)
-                //{
-                //    rb.velocity -= WheelVel * springDir / 4;
-                //}
-
             }
             else
             {
                 SuspensionForce = 0;
             }
-
-        }
-
-        public void AddLateralFriction(Vector3 hardPoint, Transform wheel, RaycastHit wheelHit, bool wheelIsGrounded, float factor)
-        {
-            if (wheelIsGrounded)
-            {
-                Vector3 SurfaceNormal = wheelHit.normal;
-
-                Vector3 contactVel = (wheel.InverseTransformDirection(rb.GetPointVelocity(hardPoint)).x) * wheel.right;
-                //contactVel = localVehicleVelocity.x * wheel.right;
-                //Debug.DrawRay(hardPoint, contactVel.normalized, Color.gray);
-                Vector3 contactDesiredAccel = -Vector3.ProjectOnPlane(contactVel, SurfaceNormal) / Time.fixedDeltaTime;
-
-                //Vector3 frictionForce = Vector3.ClampMagnitude(rb.mass/4 * contactDesiredAccel, springForce * FrictionCoefficient);
-                Vector3 frictionForce = rb.mass / 4 * contactDesiredAccel * FrictionCoefficient;
-
-                //Debug.DrawRay(hardPoint, frictionForce.normalized, Color.red);
-
-                rb.AddForceAtPosition(frictionForce * factor, hardPoint);
-            }
-
         }
 
         public void AddLateralFriction_2(Vector3 hardPoint, Transform wheel, RaycastHit wheelHit, bool wheelIsGrounded, float factor, float suspensionForce, int wheelNum)
@@ -480,28 +337,20 @@ namespace Ashsvp
             if (wheelIsGrounded)
             {
                 Vector3 SurfaceNormal = wheelHit.normal;
-
                 Vector3 sideVelocity = (wheel.InverseTransformDirection(rb.GetPointVelocity(hardPoint)).x) * wheel.right;
                 Vector3 forwardVelocity = (wheel.InverseTransformDirection(rb.GetPointVelocity(hardPoint)).z) * wheel.forward;
 
                 slipCoeff[wheelNum] = sideVelocity.magnitude / (sideVelocity.magnitude + Mathf.Clamp(forwardVelocity.magnitude, 0.1f, forwardVelocity.magnitude));
-
                 Vector3 contactDesiredAccel = -Vector3.ProjectOnPlane(sideVelocity, SurfaceNormal) / Time.fixedDeltaTime;
 
-                Vector3 frictionForce = Vector3.ClampMagnitude(rb.mass * contactDesiredAccel * sideFrictionCurve.Evaluate(slipCoeff[wheelNum]), suspensionForce * FrictionCoefficient);
-                frictionForce = suspensionForce * FrictionCoefficient * -sideVelocity.normalized * sideFrictionCurve.Evaluate(slipCoeff[wheelNum]);
-
+                Vector3 frictionForce = suspensionForce * FrictionCoefficient * -sideVelocity.normalized * sideFrictionCurve.Evaluate(slipCoeff[wheelNum]);
                 float clampedFrictionForce = Mathf.Min(rb.mass / 4 * contactDesiredAccel.magnitude, -Physics.gravity.y * rb.mass);
-
                 frictionForce = Vector3.ClampMagnitude(frictionForce * forwardFrictionCurve.Evaluate(forwardVelocity.magnitude / MaxSpeed), clampedFrictionForce);
 
-                // gravity friction
                 float slopeAngle = Vector3.Angle(transform.up, Vector3.up);
                 Vector3 gravityForce = Physics.gravity.y * (rb.mass / 4) * Vector3.up;
                 Vector3 gravitySideFriction = -Vector3.Project(gravityForce, transform.right);
-
                 Vector3 gravityForwardFriction = -Vector3.Project(gravityForce, transform.forward);
-
 
                 if (slopeAngle > slopeSlideAngle)
                 {
@@ -510,26 +359,23 @@ namespace Ashsvp
                 }
 
                 rb.AddForceAtPosition((frictionForce * factor) + gravitySideFriction, hardPoint);
-
+                
                 if(handbrakeInput > 0 || localVehicleVelocity.magnitude < 0.1f)
                 {
                     rb.AddForce(gravityForwardFriction);
                 }
-                
             }
-
         }
-
 
         void AckermannSteering(float steerInput)
         {
             float turnRadius = wheelBase / Mathf.Tan(MaxTurnAngle / Mathf.Rad2Deg);
-            if (steerInput > 0) //is turning right
+            if (steerInput > 0)
             {
                 ackermennLeftAngle = Mathf.Rad2Deg * Mathf.Atan(wheelBase / (turnRadius + (rearTrack / 2))) * steerInput;
                 ackermennRightAngle = Mathf.Rad2Deg * Mathf.Atan(wheelBase / (turnRadius - (rearTrack / 2))) * steerInput;
             }
-            else if (steerInput < 0) //is turning left
+            else if (steerInput < 0)
             {
                 ackermennLeftAngle = Mathf.Rad2Deg * Mathf.Atan(wheelBase / (turnRadius - (rearTrack / 2))) * steerInput;
                 ackermennRightAngle = Mathf.Rad2Deg * Mathf.Atan(wheelBase / (turnRadius + (rearTrack / 2))) * steerInput;
@@ -540,7 +386,6 @@ namespace Ashsvp
                 ackermennRightAngle = 0;
             }
 
-            // auto counter steering
             if (localVehicleVelocity.z > 0 && AutoCounterSteer && Mathf.Abs(localVehicleVelocity.x) > 1f)
             {
                 ackermennLeftAngle += Vector3.SignedAngle(transform.forward, rb.linearVelocity + transform.forward, transform.up);
@@ -564,21 +409,20 @@ namespace Ashsvp
                 }
                 else
                 {
-                    wheelPos = Vector3.Lerp(new Vector3(hardPoint.localPosition.x, wheel.localPosition.y, hardPoint.localPosition.z), hardPoint.localPosition + (Vector3.up * wheelRadius) - Vector3.up * (hitDistance), 0.1f);
+                    wheelPos = Vector3.Lerp(new Vector3(hardPoint.localPosition.x, wheel.localPosition.y, hardPoint.localPosition.z), 
+                                          hardPoint.localPosition + (Vector3.up * wheelRadius) - Vector3.up * (hitDistance), 0.1f);
                 }
 
                 if (wheelPos.y > hardPoint.localPosition.y + wheelRadius + maxWheelTravel - MaxSpringDistance)
                 {
                     wheelPos.y = hardPoint.localPosition.y + wheelRadius + maxWheelTravel - MaxSpringDistance;
                 }
-
-
                 wheel.localPosition = wheelPos;
-
             }
             else
             {
-                wheel.localPosition = Vector3.Lerp(new Vector3(hardPoint.localPosition.x, wheel.localPosition.y, hardPoint.localPosition.z), hardPoint.localPosition + (Vector3.up * wheelRadius) - Vector3.up * MaxSpringDistance, 0.05f);
+                wheel.localPosition = Vector3.Lerp(new Vector3(hardPoint.localPosition.x, wheel.localPosition.y, hardPoint.localPosition.z), 
+                                                  hardPoint.localPosition + (Vector3.up * wheelRadius) - Vector3.up * MaxSpringDistance, 0.05f);
             }
 
             Vector3 wheelVelocity = rb.GetPointVelocity(hardPoint.position);
@@ -606,18 +450,8 @@ namespace Ashsvp
             rot.z = 0;
             wheel.GetChild(0).localRotation = rot;
 
-            //wheel slip calculation
             forwardSlip[tireNum] = Mathf.Abs(Mathf.Clamp((wheelRotation - minRotation) / (maxRotation), -1, 1));
-            if (WheelIsGrounded)
-            {
-                skidTotal[tireNum] = Mathf.MoveTowards(skidTotal[tireNum], (forwardSlip[tireNum] + slipCoeff[tireNum]) / 2, 0.05f);
-            }
-            else
-            {
-                skidTotal[tireNum] = 0;
-            }
-
-
+            skidTotal[tireNum] = WheelIsGrounded ? Mathf.MoveTowards(skidTotal[tireNum], (forwardSlip[tireNum] + slipCoeff[tireNum]) / 2, 0.05f) : 0;
         }
 
         void setWheelSkidvalues_Start(int wheelNum, Skidmarks skidmarks, float radius)
@@ -625,6 +459,7 @@ namespace Ashsvp
             wheelSkids[wheelNum].skidmarks = skidmarks;
             wheelSkids[wheelNum].radius = wheelRadius;
         }
+
         void setWheelSkidvalues_Update(int wheelNum, float skidTotal, Vector3 skidPoint, Vector3 normal)
         {
             wheelSkids[wheelNum].skidTotal = skidTotal;
@@ -632,91 +467,54 @@ namespace Ashsvp
             wheelSkids[wheelNum].normal = normal;
         }
 
-
         void bodyAnimation()
         {
             Vector3 accel = Vector3.ProjectOnPlane((rb.linearVelocity - lastVelocity) / Time.fixedDeltaTime, transform.up);
             accel = transform.InverseTransformDirection(accel);
             lastVelocity = rb.linearVelocity;
 
-            VehicleBody.localRotation = Quaternion.Lerp(VehicleBody.localRotation, Quaternion.Euler(Mathf.Clamp(-accel.z / 10, -forwardBodyTilt, forwardBodyTilt), 0, Mathf.Clamp(accel.x / 5, -sidewaysBodyTilt, sidewaysBodyTilt)), 0.1f);
+            Quaternion targetRotation = Quaternion.Euler(
+                Mathf.Clamp(-accel.z / 10, -forwardBodyTilt, forwardBodyTilt), 
+                0, 
+                Mathf.Clamp(accel.x / 5, -sidewaysBodyTilt, sidewaysBodyTilt)
+            );
+
+            if(isNitroActive) targetRotation *= Quaternion.Euler(-5, 0, 0);
+
+            VehicleBody.localRotation = Quaternion.Lerp(VehicleBody.localRotation, targetRotation, 0.1f);
         }
 
         void GroundedCheckPerWheel(bool wheelIsGrounded)
         {
-            if (wheelIsGrounded)
-            {
-                NumberOfGroundedWheels += 1;
-            }
-
+            if (wheelIsGrounded) NumberOfGroundedWheels += 1;
         }
-
-        //private void CalculateEngineRPM()
-        //{
-        //    // Calculate engine RPM based on vehicle speed (simplified example)
-        //    float speedRatio = localVehicleVelocity.z / MaxSpeed;
-        //    engineRPM = Mathf.Lerp(minEngineRPM, maxEngineRPM, speedRatio);
-        //
-        //    // Apply engine inertia and friction
-        //    float engineTorque = engineTorqueCurve.Evaluate(engineRPM) * accelerationInput; // Assuming you have a torque curve
-        //    float frictionTorque = engineRPM / maxEngineRPM * engineFrictionFactor;
-        //    float netEngineTorque = engineTorque - frictionTorque;
-        //    float engineAngularAcceleration = netEngineTorque / engineInertia;
-        //    engineRPM += engineAngularAcceleration * Time.fixedDeltaTime * 60f; // Convert to RPM
-        //
-        //    // Clamp engine RPM to min and max values
-        //    engineRPM = Mathf.Clamp(engineRPM, minEngineRPM, maxEngineRPM);
-        //}
-
-
-        #region Vehicle Events Stuff
 
         public bool GroundedProperty
         {
-            get
-            {
-                return tempGroundedProperty;
-            }
-
+            get { return tempGroundedProperty; }
             set
             {
                 if (value != tempGroundedProperty)
                 {
                     tempGroundedProperty = value;
-                    if (tempGroundedProperty)
-                    {
-                        Debug.Log("Grounded");
-                        VehicleEvents.OnGrounded.Invoke();
-                    }
-                    else
-                    {
-                        Debug.Log("Take off");
-                        VehicleEvents.OnTakeOff.Invoke();
-                    }
+                    if (tempGroundedProperty) VehicleEvents.OnGrounded.Invoke();
+                    else VehicleEvents.OnTakeOff.Invoke();
                 }
-
-
             }
         }
-        #endregion
-
 
 #if UNITY_EDITOR
         private void OnDrawGizmos()
         {
             Gizmos.color = Color.green;
-
             for (int i = 0; i < Wheels.Length; i++)
             {
                 Gizmos.DrawLine(HardPoints[i].position + (transform.up * wheelRadius), Wheels[i].position);
                 Gizmos.DrawWireSphere(Wheels[i].position, wheelRadius);
                 Gizmos.DrawSphere(HardPoints[i].position + (transform.up * wheelRadius), 0.05f);
-
                 UnityEditor.Handles.color = Color.red;
                 UnityEditor.Handles.ArrowHandleCap(0, Wheels[i].position + transform.up * wheelRadius, Wheels[i].rotation * Quaternion.LookRotation(Vector3.up), maxWheelTravel, EventType.Repaint);
-
             }
-
         }
 #endif
 
@@ -724,10 +522,6 @@ namespace Ashsvp
         {
             Vector3 wantedImpulseY = Vector3.Dot(collision.impulse, transform.up) * transform.up;
             Vector3 wantedImpulseZ = Vector3.Dot(collision.impulse, transform.forward) * transform.forward;
-
-            //rb.AddForce(-(wantedImpulseY + wantedImpulseZ), ForceMode.Impulse);
         }
-
-
     }
 }

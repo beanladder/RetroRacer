@@ -20,8 +20,8 @@ namespace Ashsvp
         private float maxSpeed;
 
         public AudioSystem AudioSystem;
-
         private int currentGearTemp;
+
         void Start()
         {
             vehicleController = GetComponent<SimcadeVehicleController>();
@@ -31,16 +31,14 @@ namespace Ashsvp
 
         void Update()
         {
-            float velocityMag = Vector3.ProjectOnPlane( vehicleController.localVehicleVelocity, transform.up).magnitude;
+            float velocityMag = Vector3.ProjectOnPlane(vehicleController.localVehicleVelocity, transform.up).magnitude;
             if (vehicleController.vehicleIsGrounded)
             {
                 velocityMag = vehicleController.localVehicleVelocity.magnitude;
             }
 
-            VehicleSpeed = Mathf.RoundToInt(velocityMag * 3.6f); //car speed in Km/hr
-
+            VehicleSpeed = Mathf.RoundToInt(velocityMag * 3.6f);
             gearShift();
-
             UpdateCameraFOV();
         }
 
@@ -48,19 +46,17 @@ namespace Ashsvp
         {
             if (virtualCamera == null) return;
 
-            // Normalize speed between 0 and 1 based on gear speeds
-            float normalizedSpeed = Mathf.Clamp01(VehicleSpeed / maxSpeed);
+            float speedMultiplier = vehicleController.isNitroActive ? vehicleController.nitroMaxSpeedMultiplier : 1f;
+            float normalizedSpeed = Mathf.Clamp01(VehicleSpeed / (maxSpeed * speedMultiplier));
+            float targetFOV = Mathf.Lerp(minFOV, maxFOV * speedMultiplier, fovCurve.Evaluate(normalizedSpeed));
 
-            // Calculate target FOV using the curve
-            float targetFOV = Mathf.Lerp(minFOV, maxFOV, fovCurve.Evaluate(normalizedSpeed));
-
-            // Smoothly transition FOV
             virtualCamera.Lens.FieldOfView = Mathf.Lerp(
                 virtualCamera.Lens.FieldOfView,
                 targetFOV,
-                Time.deltaTime * 3f
+                Time.deltaTime * (vehicleController.isNitroActive ? 5f : 3f)
             );
         }
+
         void gearShift()
         {
             for (int i = 0; i < gearSpeeds.Length; i++)
@@ -75,27 +71,21 @@ namespace Ashsvp
             {
                 CurrentGearProperty = currentGear;
             }
-
         }
 
         public int CurrentGearProperty
         {
-            get
-            {
-                return currentGearTemp;
-            }
-
+            get { return currentGearTemp; }
             set
             {
                 currentGearTemp = value;
-
-                if (vehicleController.accelerationInput > 0 && vehicleController.localVehicleVelocity.z > 0 && !AudioSystem.GearSound.isPlaying && vehicleController.vehicleIsGrounded)
+                if (vehicleController.accelerationInput > 0 && vehicleController.localVehicleVelocity.z > 0 && 
+                    !AudioSystem.GearSound.isPlaying && vehicleController.vehicleIsGrounded)
                 {
                     vehicleController.VehicleEvents.OnGearChange.Invoke();
                     AudioSystem.GearSound.Play();
                     StartCoroutine(shiftingGear());
                 }
-
                 AudioSystem.engineSound.volume = 0.5f;
             }
         }
@@ -106,6 +96,5 @@ namespace Ashsvp
             yield return new WaitForSeconds(0.3f);
             vehicleController.CanAccelerate = true;
         }
-
     }
 }
