@@ -1,6 +1,7 @@
 using System.Collections;
 using UnityEngine;
 using Unity;
+using Unity.Cinemachine;
 
 namespace Ashsvp
 {
@@ -11,6 +12,13 @@ namespace Ashsvp
         private SimcadeVehicleController vehicleController;
         public int[] gearSpeeds = new int[] { 40, 80, 120, 160, 220 };
 
+        [Header("Camera Settings")]
+        public CinemachineCamera virtualCamera;
+        public AnimationCurve fovCurve = AnimationCurve.Linear(0, 60, 1, 75);
+        public float minFOV = 60f;
+        public float maxFOV = 75f;
+        private float maxSpeed;
+
         public AudioSystem AudioSystem;
 
         private int currentGearTemp;
@@ -18,7 +26,7 @@ namespace Ashsvp
         {
             vehicleController = GetComponent<SimcadeVehicleController>();
             currentGear = 1;
-
+            maxSpeed = gearSpeeds[gearSpeeds.Length - 1];
         }
 
         void Update()
@@ -33,10 +41,26 @@ namespace Ashsvp
 
             gearShift();
 
-
+            UpdateCameraFOV();
         }
 
+        void UpdateCameraFOV()
+        {
+            if (virtualCamera == null) return;
 
+            // Normalize speed between 0 and 1 based on gear speeds
+            float normalizedSpeed = Mathf.Clamp01(VehicleSpeed / maxSpeed);
+
+            // Calculate target FOV using the curve
+            float targetFOV = Mathf.Lerp(minFOV, maxFOV, fovCurve.Evaluate(normalizedSpeed));
+
+            // Smoothly transition FOV
+            virtualCamera.Lens.FieldOfView = Mathf.Lerp(
+                virtualCamera.Lens.FieldOfView,
+                targetFOV,
+                Time.deltaTime * 3f
+            );
+        }
         void gearShift()
         {
             for (int i = 0; i < gearSpeeds.Length; i++)
