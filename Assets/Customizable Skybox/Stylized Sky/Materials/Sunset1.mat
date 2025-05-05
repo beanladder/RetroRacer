@@ -50,6 +50,8 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
+    - _AtmosphericFogDistance: 0
+    - _AtmosphericFogIntensity: 0
     - _EarthRotationSpeed: 0.037
     - _EarthSize: 0.01
     - _EnablePlanets: 0
@@ -71,6 +73,8 @@ Material:
     - _Planet3Size: 0.015
     - _Planet3Speed: 0.01
     - _PlanetCount: 3
+    - _PlanetEdgeSoftness: 0.019
+    - _PlanetOpacity: 0.293
     - _PlanetRotationSpeed: 0.18
     - _PlanetSize: 0.025
     - _SaturnRingSize: 2.38
@@ -89,6 +93,7 @@ Material:
     - _Title: 0
     - __dirty: 0
     m_Colors:
+    - _AtmosphericFogColor: {r: 1, g: 0.6039216, b: 0.54509807, a: 1}
     - _EarthColor: {r: 0.09999997, g: 0.29999998, b: 0.8, a: 1}
     - _EarthPosition: {r: 2.88, g: 19, b: 100.29, a: 0}
     - _HorizonLineColor: {r: 0.86764705, g: 0, b: 0.12565862, a: 1}

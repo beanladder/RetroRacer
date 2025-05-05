@@ -2,20 +2,25 @@
 %TAG !u! tag:unity3d.com,2011:
 --- !u!21 &2100000
 Material:
-  serializedVersion: 6
+  serializedVersion: 8
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Night4
   m_Shader: {fileID: 4800000, guid: eb3c6fb598ded4c71b8968e1c40a3b4d, type: 3}
-  m_ShaderKeywords: 
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords:
+  - _ENABLESTARS_ON
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
   stringTagMap: {}
   disabledShaderPasses: []
+  m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -35,11 +40,23 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _EarthTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _EmissionMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _JupiterTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _MainTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MarsTexture:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -55,24 +72,48 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SaturnRingTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SaturnTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    m_Ints: []
     m_Floats:
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
+    - _EarthRotationSpeed: 0.1
+    - _EarthSize: 0.05
+    - _EnablePlanets: 0
+    - _EnableStars: 1
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
     - _HorizonLineContribution: 0.121
     - _HorizonLineExponent: 12.3
+    - _JupiterRotationSpeed: 0.05
+    - _JupiterSize: 0.08
+    - _MarsRotationSpeed: 0.12
+    - _MarsSize: 0.04
     - _Metallic: 0
     - _Mode: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
+    - _SaturnRingSize: 1.8
+    - _SaturnRotationSpeed: 0.07
+    - _SaturnSize: 0.07
     - _SkyGradientExponent: 0.75
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
+    - _StarDensity: 50
+    - _StarIntensity: 1
+    - _StarSize: 0.05
+    - _StarTwinkleSpeed: 3
     - _SunDiscContribution: 1
     - _SunDiscExponent: 250000
     - _SunDiscMultiplier: 500
@@ -83,9 +124,16 @@ Material:
     - __dirty: 0
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _EarthPosition: {r: 0.5, g: 0.3, b: 0.7, a: 0}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _HorizonLineColor: {r: 0.49729663, g: 0.9264706, b: 0.85543495, a: 0}
+    - _JupiterPosition: {r: -0.6, g: 0.4, b: 0.3, a: 0}
+    - _MarsPosition: {r: -0.4, g: -0.3, b: 0.2, a: 0}
+    - _SaturnPosition: {r: 0.3, g: -0.2, b: -0.5, a: 0}
     - _SkyGradientBottom: {r: 0.12683824, g: 0.3133874, b: 0.375, a: 0}
     - _SkyGradientTop: {r: 0.027897932, g: 0.049892798, b: 0.08823531, a: 0}
+    - _StarColor: {r: 1, g: 1, b: 1, a: 1}
     - _SunDiscColor: {r: 1, g: 1, b: 1, a: 1}
     - _SunHaloColor: {r: 0.04757783, g: 0.8088235, b: 0.7143241, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

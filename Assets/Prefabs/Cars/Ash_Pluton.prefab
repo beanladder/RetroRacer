@@ -244,8 +244,8 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 36e7c998e660c9646bec8182b09f625c, type: 2}
-  - {fileID: 2100000, guid: 33369fea361b12c48acb7ddcc9032afa, type: 2}
+  - {fileID: 2100000, guid: a0c17ea2e6ab56d44ab69bb136803e14, type: 2}
+  - {fileID: 2100000, guid: 745d072328c1f425eb6081622361dc40, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -760,6 +760,11 @@ MonoBehaviour:
   inputManager: {fileID: 8002651500640049383}
   springForce: 40000
   springDamper: 3000
+  cinemachineCamera: {fileID: 0}
+  alternativeCamera: {fileID: 0}
+  normalCameraHeight: 1.51
+  nitroCameraHeight: 0.9
+  cameraTransitionSpeed: 2
   MaxSpeed: 100
   Acceleration: 30
   AccelerationCurve:
@@ -902,6 +907,17 @@ MonoBehaviour:
   AutoCounterSteer: 1
   DownForce: 5
   airAngularDrag: 0.2
+  nitroAccelerationMultiplier: 2
+  nitroMaxSpeedMultiplier: 1.5
+  nitroDuration: 3
+  nitroCooldown: 5
+  nitroDepletionRate: 0.3
+  nitroRefillRate: 0.1
+  currentNitro: 100
+  isNitroActive: 0
+  isNitroCooldown: 0
+  nitroParticles: {fileID: 0}
+  nitroSound: {fileID: 0}
   VehicleBody: {fileID: 7214535554829841655}
   forwardBodyTilt: 3
   sidewaysBodyTilt: 4
@@ -929,6 +945,12 @@ MonoBehaviour:
       m_PersistentCalls:
         m_Calls: []
     OnGearChange:
+      m_PersistentCalls:
+        m_Calls: []
+    OnNitroStart:
+      m_PersistentCalls:
+        m_Calls: []
+    OnNitroEnd:
       m_PersistentCalls:
         m_Calls: []
   steerInput: 0
@@ -1209,6 +1231,33 @@ MonoBehaviour:
   VehicleSpeed: 0
   currentGear: 0
   gearSpeeds: 280000005000000078000000a0000000dc000000
+  virtualCamera: {fileID: 0}
+  fovCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 60
+      inSlope: 0
+      outSlope: 15
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 75
+      inSlope: 15
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  minFOV: 60
+  maxFOV: 75
   AudioSystem: {fileID: 6244650937218379012}
 --- !u!114 &6479588334138578806
 MonoBehaviour:
@@ -1240,6 +1289,7 @@ MonoBehaviour:
     accelerate: 119
     decelerate: 115
     handBrake: 32
+    cameraSwitch: 99
   useMobileInput: 0
   mobileInput:
     steerLeft: {fileID: 0}
@@ -1247,6 +1297,7 @@ MonoBehaviour:
     accelerate: {fileID: 0}
     decelerate: {fileID: 0}
     handBrake: {fileID: 0}
+    cameraSwitch: {fileID: 0}
 --- !u!114 &7875277558338081294
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -13,7 +13,6 @@ Material:
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords:
-  - _ENABLEPLANETS_ON
   - _ENABLESTARS_ON
   - _HORIZONLINEBLENDMODE_ADD
   - _SUNHALOBLENDMODE_ADD
@@ -44,11 +43,23 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _EarthTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _EmissionMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _JupiterTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _MainTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _MarsTexture:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -64,13 +75,23 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SaturnRingTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SaturnTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _BumpScale: 1
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
-    - _EnablePlanets: 1
+    - _EarthRotationSpeed: 0.1
+    - _EarthSize: 0.05
+    - _EnablePlanets: 0
     - _EnableStars: 1
     - _GlossMapScale: 1
     - _Glossiness: 0.5
@@ -78,6 +99,10 @@ Material:
     - _HorizonLineBlendMode: 0
     - _HorizonLineContribution: 1
     - _HorizonLineExponent: 30
+    - _JupiterRotationSpeed: 0.05
+    - _JupiterSize: 0.08
+    - _MarsRotationSpeed: 0.12
+    - _MarsSize: 0.04
     - _Metallic: 0
     - _Mode: 0
     - _OcclusionStrength: 1
@@ -93,6 +118,9 @@ Material:
     - _Planet3Size: 0.2
     - _Planet3Speed: 0.1
     - _PlanetCount: 5
+    - _SaturnRingSize: 1.8
+    - _SaturnRotationSpeed: 0.07
+    - _SaturnSize: 0.07
     - _SkyGradientExponent: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
@@ -115,8 +143,11 @@ Material:
     - __dirty: 0
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _EarthPosition: {r: 0.5, g: 0.3, b: 0.7, a: 0}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _HorizonLineColor: {r: 1, g: 0.50885606, b: 0.23921567, a: 0.6}
+    - _JupiterPosition: {r: -0.6, g: 0.4, b: 0.3, a: 0}
+    - _MarsPosition: {r: -0.4, g: -0.3, b: 0.2, a: 0}
     - _Planet1Color: {r: 0.19999996, g: 0.6, b: 0.9, a: 1}
     - _Planet1Color1: {r: 0.5, g: 0.19999996, b: 0.09999997, a: 1}
     - _Planet1Color2: {r: 0.8, g: 0.29999998, b: 0.09999997, a: 1}
@@ -132,6 +163,7 @@ Material:
     - _Planet3Color2: {r: 0.19999996, g: 0.7, b: 0.29999998, a: 1}
     - _Planet3Pos: {r: 3.95, g: 1.83, b: -9.57, a: 0}
     - _Planet3Position: {r: -0.5, g: 0.4, b: 0.2, a: 0}
+    - _SaturnPosition: {r: 0.3, g: -0.2, b: -0.5, a: 0}
     - _SkyGradientBottom: {r: 0.38431376, g: 0.13333334, b: 0.20392159, a: 1}
     - _SkyGradientTop: {r: 0, g: 0, b: 0, a: 1}
     - _StarColor: {r: 1, g: 1, b: 1, a: 1}
