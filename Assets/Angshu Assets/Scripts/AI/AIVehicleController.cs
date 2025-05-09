@@ -8,34 +8,76 @@ using Track;
 public class AIVehicleController : MonoBehaviour
 {
     [Header("AI Configuration")]
-    [SerializeField] public TrackGenerator trackGenerator;
-    [SerializeField, Range(1, 20)] private int lookaheadPoints = 5;
-    [SerializeField, Range(0f, 1f)] private float maxSteeringAngle = 0.8f;
-    [SerializeField, Range(0f, 1f)] private float maxSpeedMultiplier = 0.9f;
-    [SerializeField, Range(0f, 1f)] private float minSpeedMultiplier = 0.5f;
-    [SerializeField, Range(0f, 10f)] private float steeringSpeed = 3f;
-    [SerializeField, Range(0f, 10f)] private float accelerationSpeed = 2f;
-    [SerializeField] private bool useNitroOnStraights = true;
-    [SerializeField, Range(0f, 1f)] private float nitroThreshold = 0.8f;
-    [SerializeField, Range(0f, 1f)] private float avoidanceStrength = 0.5f;
-    [SerializeField, Range(1f, 10f)] private float avoidanceDistance = 5f;
+    [SerializeField, Tooltip("Reference to the track generator that contains the racing line for the AI to follow")]
+    public TrackGenerator trackGenerator;
+    
+    [SerializeField, Range(1, 20), Tooltip("How many points ahead on the racing line the AI will target. Higher values make the AI look further ahead and take smoother lines")]
+    private int lookaheadPoints = 5;
+    
+    [SerializeField, Range(0f, 1f), Tooltip("Maximum steering angle the AI can use. Lower values make the AI take wider turns, higher values allow sharper turning")]
+    private float maxSteeringAngle = 0.8f;
+    
+    [SerializeField, Range(0f, 1f), Tooltip("Maximum speed multiplier applied to the racing line's recommended speed. Higher values allow the AI to drive closer to the maximum possible speed")]
+    private float maxSpeedMultiplier = 0.9f;
+    
+    [SerializeField, Range(0f, 1f), Tooltip("Minimum speed multiplier applied to the racing line's recommended speed. Higher values prevent the AI from driving too slowly")]
+    private float minSpeedMultiplier = 0.5f;
+    
+    [SerializeField, Range(0f, 10f), Tooltip("How quickly the AI adjusts its steering. Higher values make steering more responsive but potentially less stable")]
+    private float steeringSpeed = 3f;
+    
+    [SerializeField, Range(0f, 10f), Tooltip("How quickly the AI adjusts its acceleration/braking. Higher values make throttle control more responsive")]
+    private float accelerationSpeed = 2f;
+    
+    [SerializeField, Tooltip("Whether the AI should use nitro on straight sections of the track")]
+    private bool useNitroOnStraights = true;
+    
+    [SerializeField, Range(0f, 1f), Tooltip("Minimum recommended speed threshold for using nitro. Higher values mean nitro is only used on longer straights")]
+    private float nitroThreshold = 0.8f;
+    
+    [SerializeField, Range(0f, 1f), Tooltip("How strongly the AI avoids other vehicles. Higher values cause more aggressive avoidance maneuvers")]
+    private float avoidanceStrength = 0.5f;
+    
+    [SerializeField, Range(1f, 10f), Tooltip("Maximum distance at which the AI will start avoiding other vehicles. Higher values make the AI start avoiding earlier")]
+    private float avoidanceDistance = 5f;
     
     [Header("Corner Handling")]
-    [SerializeField, Range(5, 30)] private int cornerDetectionLookahead = 20; // Increased to look further ahead
-    [SerializeField, Range(0.1f, 1f)] private float cornerSpeedReductionFactor = 0.4f; // More aggressive speed reduction
-    [SerializeField, Range(0.1f, 1f)] private float cornerDetectionThreshold = 0.2f; // Detect corners earlier
-    [SerializeField, Range(1f, 10f)] private float brakingDistance = 5f; // Increased braking distance
+    [SerializeField, Range(5, 30), Tooltip("How many points ahead the AI looks to detect corners. Higher values allow earlier corner detection")]
+    private int cornerDetectionLookahead = 20;
+    
+    [SerializeField, Range(0.1f, 1f), Tooltip("How much the AI reduces speed in corners. Lower values cause more aggressive braking in corners")]
+    private float cornerSpeedReductionFactor = 0.4f;
+    
+    [SerializeField, Range(0.05f, 0.5f), Tooltip("Minimum curvature threshold to consider a section as a corner. Lower values detect more subtle corners")]
+    private float cornerDetectionThreshold = 0.15f;
+    
+    [SerializeField, Range(1f, 20f), Tooltip("Distance at which the AI starts braking for corners. Higher values make the AI brake earlier before corners")]
+    private float brakingDistance = 10f;
+    
+    [SerializeField, Range(0.1f, 5f), Tooltip("Multiplier for braking intensity. Higher values make the AI brake more aggressively")]
+    private float brakingIntensityMultiplier = 2.5f;
+    
+    [SerializeField, Range(0.1f, 1f), Tooltip("Corner factor threshold at which the AI will start using handbrake. Higher values mean handbrake is used only in sharper corners")]
+    private float handbrakeThreshold = 0.22f;
     
     // Difficulty settings
     [Header("Difficulty Settings")]
-    [SerializeField, Range(0f, 1f)] private float skillLevel = 0.8f; // Higher = better driving
-    [SerializeField, Range(0f, 1f)] private float aggressiveness = 0.7f; // Higher = more aggressive driving
+    [SerializeField, Range(0f, 1f), Tooltip("Overall driving skill of the AI. Higher values improve cornering precision, braking timing, and racing line following")]
+    private float skillLevel = 0.8f;
+    
+    [SerializeField, Range(0f, 1f), Tooltip("How aggressively the AI drives. Higher values increase target speeds and make the AI take more risks")]
+    private float aggressiveness = 0.7f;
     
     // Debug visualization
     [Header("Debug")]
-    [SerializeField] private bool showDebugInfo = true;
-    [SerializeField] private Color targetPointColor = Color.blue;
-    [SerializeField] private Color pathColor = Color.yellow;
+    [SerializeField, Tooltip("Whether to show debug visualization for AI decision making")]
+    private bool showDebugInfo = true;
+    
+    [SerializeField, Tooltip("Color used for visualizing the target point the AI is steering towards")]
+    private Color targetPointColor = Color.blue;
+    
+    [SerializeField, Tooltip("Color used for visualizing the racing line path ahead")]
+    private Color pathColor = Color.yellow;
     
     // Private variables
     private SimcadeVehicleController vehicleController;
@@ -44,6 +86,7 @@ public class AIVehicleController : MonoBehaviour
     private float currentSteer = 0f;
     private float currentAcceleration = 0f;
     private float currentBrake = 0f;
+    private float currentHandbrake = 0f;
     private bool isUsingNitro = false;
     private List<AIVehicleController> otherVehicles = new List<AIVehicleController>();
     
@@ -142,15 +185,27 @@ public class AIVehicleController : MonoBehaviour
         // Detect upcoming corners by analyzing multiple points ahead
         float cornerFactor = DetectUpcomingCorners();
         
+        // Add debug log to monitor corner detection
+        if (cornerFactor > 0.1f && showDebugInfo)
+        {
+            Debug.Log($"Car {gameObject.name}: Detected corner with factor {cornerFactor:F2}");
+        }
+        
         // Calculate target speed based on recommended speed from racing line
         float targetSpeed = recommendedSpeed;
         
-        // Apply corner speed reduction if approaching a sharp turn
+        // Apply corner speed reduction if approaching a sharp turn - more aggressive reduction
         if (cornerFactor > 0)
         {
-            // Reduce speed based on corner sharpness
-            float cornerSpeedReduction = Mathf.Lerp(1.0f, cornerSpeedReductionFactor, cornerFactor);
+            // Reduce speed based on corner sharpness - more aggressive curve
+            float cornerSpeedReduction = Mathf.Lerp(1.0f, cornerSpeedReductionFactor, Mathf.Pow(cornerFactor, 0.7f));
             targetSpeed *= cornerSpeedReduction;
+            
+            // Add debug visualization for target speed reduction
+            if (showDebugInfo)
+            {
+                Debug.DrawRay(transform.position + Vector3.up * 5f, Vector3.right * cornerSpeedReduction * 3f, Color.magenta);
+            }
         }
         
         // Apply skill level to speed management
@@ -170,10 +225,13 @@ public class AIVehicleController : MonoBehaviour
             Debug.DrawRay(transform.position + Vector3.up * 3.5f, Vector3.right * targetSpeed * 5f, Color.yellow);
         }
         
-        // Calculate how much we need to slow down based on corner factor
-        float cornerBrakingFactor = Mathf.Pow(cornerFactor, 0.7f) * 1.5f; // Exponential curve for more aggressive braking
+        // Calculate how much we need to slow down based on corner factor - more gradual curve
+        float cornerBrakingFactor = Mathf.Pow(cornerFactor, 0.8f) * 1.2f; // Less aggressive exponential curve
         
-        if (currentSpeed < targetSpeed && cornerFactor < 0.3f) // Only accelerate if not approaching a sharp corner
+        // Modified condition to start braking earlier - now we brake if either:
+        // 1. We're going faster than target speed OR
+        // 2. We're approaching a significant corner (factor > 0.15) regardless of current speed
+        if (currentSpeed < targetSpeed && cornerFactor < 0.15f) // Lowered threshold to start braking earlier
         {
             // Need to accelerate
             float accelerationFactor = 1.0f - (cornerFactor * 2.0f); // Reduce acceleration when approaching corners
@@ -194,32 +252,54 @@ public class AIVehicleController : MonoBehaviour
         }
         else
         {
-            // Need to brake/coast
+            // Need to brake/coast - MODIFIED FOR GRADUAL DECELERATION
             // Calculate base braking intensity based on speed difference
             float speedDifference = currentSpeed - targetSpeed;
-            float brakingIntensity = Mathf.Clamp01(speedDifference * 2.0f); // More aggressive braking
             
-            // Apply stronger braking when approaching corners
-            brakingIntensity = Mathf.Max(brakingIntensity, cornerBrakingFactor);
+            // Implement a more gradual braking approach
+            // First phase: just cut throttle when approaching corners or slightly over target speed
+            // Second phase: apply gentle braking only when significantly over target speed
             
-            // Cut throttle completely when braking
-            currentAcceleration = Mathf.Lerp(currentAcceleration, 0f, Time.deltaTime * accelerationSpeed * 2.0f);
+            // Determine if we need to apply brakes or just coast
+            bool needsActiveBraking = speedDifference > 0.15f || cornerFactor > 0.4f;
             
-            // Apply brakes more aggressively
-            currentBrake = Mathf.Lerp(currentBrake, brakingIntensity, Time.deltaTime * accelerationSpeed * 3.0f);
+            // Calculate a more gentle braking intensity
+            float brakingIntensity = 0f;
+            if (needsActiveBraking)
+            {
+                // More gradual braking curve - less aggressive
+                brakingIntensity = Mathf.Clamp01(speedDifference * (brakingIntensityMultiplier * 0.6f));
+                
+                // Apply gentler braking when approaching corners
+                brakingIntensity = Mathf.Max(brakingIntensity, cornerBrakingFactor * 0.7f);
+            }
+            
+            // Cut throttle completely when braking or coasting
+            currentAcceleration = Mathf.Lerp(currentAcceleration, 0f, Time.deltaTime * accelerationSpeed * 2.0f); // Slightly slower throttle cut
+            
+            // Apply brakes more gradually
+            currentBrake = Mathf.Lerp(currentBrake, brakingIntensity, Time.deltaTime * accelerationSpeed * 2.0f); // Slower brake application
+            
+            // Use handbrake for sharp corners to prevent loss of control
+            currentHandbrake = cornerFactor > handbrakeThreshold ? Mathf.Lerp(currentHandbrake, (cornerFactor - handbrakeThreshold) * 2f, Time.deltaTime * accelerationSpeed) : 0f;
+            
             isUsingNitro = false;
             
-            // Debug braking intensity
-            if (showDebugInfo && brakingIntensity > 0.1f)
+            // Enhanced debug visualization
+            if (showDebugInfo && brakingIntensity > 0.05f) // Lower threshold to see more braking events
             {
                 Debug.DrawRay(transform.position + Vector3.up * 4f, Vector3.left * brakingIntensity * 5f, Color.red);
+                if (brakingIntensity > 0.3f) // Log significant braking events
+                {
+                    Debug.Log($"Car {gameObject.name}: Braking with intensity {brakingIntensity:F2}, corner factor {cornerFactor:F2}");
+                }
             }
         }
         
         // Apply inputs to vehicle controller
         if (vehicleController.inputManager != null)
         {
-            vehicleController.inputManager.SetAIInputs(currentSteer, currentAcceleration, currentBrake, isUsingNitro);
+            vehicleController.inputManager.SetAIInputs(currentSteer, currentAcceleration, currentHandbrake > 0f ? currentHandbrake : currentBrake, isUsingNitro);
         }
         
         // Debug visualization
@@ -241,6 +321,13 @@ public class AIVehicleController : MonoBehaviour
             
             // Draw avoidance vector
             Debug.DrawRay(transform.position, avoidanceVector * 5f, Color.red);
+            
+            // Draw handbrake activation
+            if (currentHandbrake > 0f)
+            {
+                Debug.DrawRay(transform.position + Vector3.up * 4.5f, Vector3.right * currentHandbrake * 5f, Color.magenta);
+                Debug.Log($"Car {gameObject.name}: Using handbrake with intensity {currentHandbrake:F2}, corner factor {cornerFactor:F2}");
+            }
         }
     }
     
@@ -302,8 +389,8 @@ public class AIVehicleController : MonoBehaviour
             // Normalize to 0-1 range, where 1 is a sharp 180-degree turn
             float curvature = 1f - (dot + 1f) / 2f; 
             
-            // Only consider significant curves
-            if (curvature > cornerDetectionThreshold)
+            // Only consider significant curves - lowered threshold to detect more corners
+            if (curvature > cornerDetectionThreshold * 0.8f) // 20% lower threshold for initial detection
             {
                 // Calculate approximate distance to this corner
                 float distance = 0f;
@@ -316,7 +403,7 @@ public class AIVehicleController : MonoBehaviour
                 
                 // Weight the curvature by distance - closer corners matter more
                 // Reduced the divisor to make distance weighting more significant
-                float distanceWeight = Mathf.Clamp01(1.0f - (distance / (brakingDistance * 10f)));
+                float distanceWeight = Mathf.Clamp01(1.0f - (distance / (brakingDistance * 5f))); // More aggressive distance weighting
                 float weightedCurvature = curvature * distanceWeight;
                 
                 // Keep track of the sharpest corner and its distance
@@ -331,19 +418,24 @@ public class AIVehicleController : MonoBehaviour
         
         // Apply braking distance factor - start slowing down earlier for sharper corners
         // Increased the influence of braking distance to start slowing down earlier
-        float cornerFactor = maxCurvature * Mathf.Clamp01((brakingDistance * 1.5f) / Mathf.Max(0.1f, distanceToCorner));
+        float cornerFactor = maxCurvature * Mathf.Clamp01((brakingDistance * 2.5f) / Mathf.Max(0.1f, distanceToCorner));
         
         // Apply skill level - better drivers anticipate corners better
         cornerFactor *= Mathf.Lerp(1.5f, 1.0f, skillLevel);
         
-        // Debug visualization for corner detection
-        if (showDebugInfo && cornerFactor > 0.1f)
+        // Enhanced debug visualization for corner detection
+        if (showDebugInfo && cornerFactor > 0.05f) // Lower threshold to see more corner detections
         {            
-            // Draw a sphere at the detected corner position
+            // Draw a line to the detected corner position
             Debug.DrawLine(transform.position, cornerPosition, Color.red);
             
             // Display the corner factor as text above the vehicle
             Debug.DrawRay(transform.position + Vector3.up * 2f, Vector3.up * cornerFactor * 5f, Color.red);
+            
+            // Draw a sphere at the corner position
+            Debug.DrawRay(cornerPosition, Vector3.up * 2f, Color.red);
+            Debug.DrawRay(cornerPosition, Vector3.right * 2f, Color.red);
+            Debug.DrawRay(cornerPosition, Vector3.forward * 2f, Color.red);
         }
         
         return Mathf.Clamp01(cornerFactor);
