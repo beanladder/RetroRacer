@@ -19,8 +19,14 @@ namespace Track
         [SerializeField, Tooltip("Whether to generate a racing line for AI vehicles")]
         private bool generateRacingLine = true;
         
-        [SerializeField, Range(0f, 1f), Tooltip("How aggressively AI should cut corners (0-1)")]
-        private float cornerCuttingFactor = 0.7f;
+        [SerializeField, Range(0f, 1f), Tooltip("Controls how much the racing line deviates from the center on straights.")]
+        private float minDeviation = 0.2f;
+        
+        [SerializeField, Range(0f, 2f), Tooltip("Controls how much the racing line deviates from the center in corners.")]
+        private float maxDeviation = 0.9f;
+        
+        [SerializeField, Range(1f, 20f), Tooltip("The scale of the racing line's deviation. Lower values create smoother, longer waves.")]
+        private float deviationScale = 8f;
         
         [SerializeField, Tooltip("Show racing line visualization in editor")]
         private bool showRacingLine = true;
@@ -196,7 +202,7 @@ namespace Track
         {
             if (vertices.Count < 3) return;
             
-            _racingLine.Generate(vertices, Width, Resolution, cornerCuttingFactor);
+            _racingLine.Generate(Spline, Width, Resolution, minDeviation, maxDeviation, deviationScale);
             
             // Save racing line data to serialized fields for prefab saving
             _racingLinePoints.Clear();

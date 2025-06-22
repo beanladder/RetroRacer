@@ -12,61 +12,61 @@ public class AIVehicleController : MonoBehaviour
     public TrackGenerator trackGenerator;
     
     [SerializeField, Range(1, 20), Tooltip("How many points ahead on the racing line the AI will target. Higher values make the AI look further ahead and take smoother lines")]
-    private int lookaheadPoints = 5;
+    private int lookaheadPoints = 8;
     
     [SerializeField, Range(0f, 1f), Tooltip("Maximum steering angle the AI can use. Lower values make the AI take wider turns, higher values allow sharper turning")]
-    private float maxSteeringAngle = 0.8f;
+    private float maxSteeringAngle = 0.7f;
     
     [SerializeField, Range(0f, 1f), Tooltip("Maximum speed multiplier applied to the racing line's recommended speed. Higher values allow the AI to drive closer to the maximum possible speed")]
-    private float maxSpeedMultiplier = 0.9f;
+    private float maxSpeedMultiplier = 0.85f;
     
     [SerializeField, Range(0f, 1f), Tooltip("Minimum speed multiplier applied to the racing line's recommended speed. Higher values prevent the AI from driving too slowly")]
-    private float minSpeedMultiplier = 0.5f;
+    private float minSpeedMultiplier = 0.6f;
     
     [SerializeField, Range(0f, 10f), Tooltip("How quickly the AI adjusts its steering. Higher values make steering more responsive but potentially less stable")]
-    private float steeringSpeed = 3f;
+    private float steeringSpeed = 2.5f;
     
     [SerializeField, Range(0f, 10f), Tooltip("How quickly the AI adjusts its acceleration/braking. Higher values make throttle control more responsive")]
-    private float accelerationSpeed = 2f;
+    private float accelerationSpeed = 1.5f;
     
     [SerializeField, Tooltip("Whether the AI should use nitro on straight sections of the track")]
     private bool useNitroOnStraights = true;
     
     [SerializeField, Range(0f, 1f), Tooltip("Minimum recommended speed threshold for using nitro. Higher values mean nitro is only used on longer straights")]
-    private float nitroThreshold = 0.8f;
+    private float nitroThreshold = 0.85f;
     
     [SerializeField, Range(0f, 1f), Tooltip("How strongly the AI avoids other vehicles. Higher values cause more aggressive avoidance maneuvers")]
-    private float avoidanceStrength = 0.5f;
+    private float avoidanceStrength = 0.4f;
     
     [SerializeField, Range(1f, 10f), Tooltip("Maximum distance at which the AI will start avoiding other vehicles. Higher values make the AI start avoiding earlier")]
-    private float avoidanceDistance = 5f;
+    private float avoidanceDistance = 4f;
     
     [Header("Corner Handling")]
     [SerializeField, Range(5, 30), Tooltip("How many points ahead the AI looks to detect corners. Higher values allow earlier corner detection")]
-    private int cornerDetectionLookahead = 20;
+    private int cornerDetectionLookahead = 25;
     
     [SerializeField, Range(0.1f, 1f), Tooltip("How much the AI reduces speed in corners. Lower values cause more aggressive braking in corners")]
-    private float cornerSpeedReductionFactor = 0.4f;
+    private float cornerSpeedReductionFactor = 0.5f;
     
     [SerializeField, Range(0.05f, 0.5f), Tooltip("Minimum curvature threshold to consider a section as a corner. Lower values detect more subtle corners")]
-    private float cornerDetectionThreshold = 0.15f;
+    private float cornerDetectionThreshold = 0.12f;
     
     [SerializeField, Range(1f, 20f), Tooltip("Distance at which the AI starts braking for corners. Higher values make the AI brake earlier before corners")]
-    private float brakingDistance = 10f;
+    private float brakingDistance = 15f;
     
     [SerializeField, Range(0.1f, 5f), Tooltip("Multiplier for braking intensity. Higher values make the AI brake more aggressively")]
-    private float brakingIntensityMultiplier = 2.5f;
+    private float brakingIntensityMultiplier = 1.8f;
     
     [SerializeField, Range(0.1f, 1f), Tooltip("Corner factor threshold at which the AI will start using handbrake. Higher values mean handbrake is used only in sharper corners")]
-    private float handbrakeThreshold = 0.22f;
+    private float handbrakeThreshold = 0.25f;
     
     // Difficulty settings
     [Header("Difficulty Settings")]
     [SerializeField, Range(0f, 1f), Tooltip("Overall driving skill of the AI. Higher values improve cornering precision, braking timing, and racing line following")]
-    private float skillLevel = 0.8f;
+    private float skillLevel = 0.75f;
     
     [SerializeField, Range(0f, 1f), Tooltip("How aggressively the AI drives. Higher values increase target speeds and make the AI take more risks")]
-    private float aggressiveness = 0.7f;
+    private float aggressiveness = 0.6f;
     
     // Debug visualization
     [Header("Debug")]
@@ -228,20 +228,25 @@ public class AIVehicleController : MonoBehaviour
         // Calculate how much we need to slow down based on corner factor - more gradual curve
         float cornerBrakingFactor = Mathf.Pow(cornerFactor, 0.8f) * 1.2f; // Less aggressive exponential curve
         
-        // Modified condition to start braking earlier - now we brake if either:
-        // 1. We're going faster than target speed OR
-        // 2. We're approaching a significant corner (factor > 0.15) regardless of current speed
-        if (currentSpeed < targetSpeed && cornerFactor < 0.15f) // Lowered threshold to start braking earlier
+        // NEW: Two-phase braking approach for more realistic driving
+        // Phase 1: Cut throttle when approaching corners or slightly over target speed
+        // Phase 2: Apply brakes only when significantly over target speed or in sharp corners
+        
+        bool shouldAccelerate = currentSpeed < targetSpeed && cornerFactor < 0.1f; // Lower threshold for acceleration
+        bool needsThrottleCut = cornerFactor > 0.05f || currentSpeed > targetSpeed * 1.05f; // Start cutting throttle earlier
+        bool needsActiveBraking = currentSpeed > targetSpeed * 1.15f || cornerFactor > 0.3f; // Higher threshold for actual braking
+        
+        if (shouldAccelerate)
         {
-            // Need to accelerate
-            float accelerationFactor = 1.0f - (cornerFactor * 2.0f); // Reduce acceleration when approaching corners
-            accelerationFactor = Mathf.Max(0.1f, accelerationFactor); // Ensure minimum acceleration
+            // Need to accelerate - only when well below target speed and not approaching corners
+            float accelerationFactor = 1.0f - (cornerFactor * 3.0f); // More aggressive acceleration reduction near corners
+            accelerationFactor = Mathf.Max(0.05f, accelerationFactor); // Lower minimum acceleration
             
             currentAcceleration = Mathf.Lerp(currentAcceleration, accelerationFactor, Time.deltaTime * accelerationSpeed);
-            currentBrake = 0f;
+            currentBrake = Mathf.Lerp(currentBrake, 0f, Time.deltaTime * accelerationSpeed * 2.0f); // Release brakes quickly
             
             // Use nitro on straights if available and not approaching a corner
-            if (useNitroOnStraights && recommendedSpeed > nitroThreshold && cornerFactor < 0.1f && !vehicleController.isNitroCooldown)
+            if (useNitroOnStraights && recommendedSpeed > nitroThreshold && cornerFactor < 0.08f && !vehicleController.isNitroCooldown)
             {
                 isUsingNitro = true;
             }
@@ -250,51 +255,77 @@ public class AIVehicleController : MonoBehaviour
                 isUsingNitro = false;
             }
         }
-        else
+        else if (needsThrottleCut)
         {
-            // Need to brake/coast - MODIFIED FOR GRADUAL DECELERATION
-            // Calculate base braking intensity based on speed difference
+            // Phase 1: Cut throttle to slow down naturally
+            // This creates a more realistic "lift off" behavior before applying brakes
+            
+            // Cut throttle completely when approaching corners or over target speed
+            currentAcceleration = Mathf.Lerp(currentAcceleration, 0f, Time.deltaTime * accelerationSpeed * 1.5f);
+            
+            // Only apply light braking if significantly over target speed
             float speedDifference = currentSpeed - targetSpeed;
+            float lightBrakingIntensity = 0f;
             
-            // Implement a more gradual braking approach
-            // First phase: just cut throttle when approaching corners or slightly over target speed
-            // Second phase: apply gentle braking only when significantly over target speed
-            
-            // Determine if we need to apply brakes or just coast
-            bool needsActiveBraking = speedDifference > 0.15f || cornerFactor > 0.4f;
-            
-            // Calculate a more gentle braking intensity
-            float brakingIntensity = 0f;
-            if (needsActiveBraking)
+            if (speedDifference > 0.1f) // Only brake if 10% over target speed
             {
-                // More gradual braking curve - less aggressive
-                brakingIntensity = Mathf.Clamp01(speedDifference * (brakingIntensityMultiplier * 0.6f));
-                
-                // Apply gentler braking when approaching corners
-                brakingIntensity = Mathf.Max(brakingIntensity, cornerBrakingFactor * 0.7f);
+                lightBrakingIntensity = Mathf.Clamp01(speedDifference * brakingIntensityMultiplier * 0.3f); // Very light braking
             }
             
-            // Cut throttle completely when braking or coasting
-            currentAcceleration = Mathf.Lerp(currentAcceleration, 0f, Time.deltaTime * accelerationSpeed * 2.0f); // Slightly slower throttle cut
-            
-            // Apply brakes more gradually
-            currentBrake = Mathf.Lerp(currentBrake, brakingIntensity, Time.deltaTime * accelerationSpeed * 2.0f); // Slower brake application
-            
-            // Use handbrake for sharp corners to prevent loss of control
-            currentHandbrake = cornerFactor > handbrakeThreshold ? Mathf.Lerp(currentHandbrake, (cornerFactor - handbrakeThreshold) * 2f, Time.deltaTime * accelerationSpeed) : 0f;
+            currentBrake = Mathf.Lerp(currentBrake, lightBrakingIntensity, Time.deltaTime * accelerationSpeed * 1.5f);
             
             isUsingNitro = false;
             
-            // Enhanced debug visualization
-            if (showDebugInfo && brakingIntensity > 0.05f) // Lower threshold to see more braking events
+            // Debug visualization for throttle cut phase
+            if (showDebugInfo && cornerFactor > 0.05f)
+            {
+                Debug.DrawRay(transform.position + Vector3.up * 4.2f, Vector3.left * 2f, Color.orange);
+                Debug.Log($"Car {gameObject.name}: Cutting throttle, corner factor {cornerFactor:F2}");
+            }
+        }
+        else if (needsActiveBraking)
+        {
+            // Phase 2: Apply active braking when necessary
+            float speedDifference = currentSpeed - targetSpeed;
+            
+            // Calculate braking intensity based on speed difference and corner factor
+            float brakingIntensity = Mathf.Clamp01(speedDifference * brakingIntensityMultiplier * 0.8f);
+            
+            // Add corner-based braking for sharp turns
+            if (cornerFactor > 0.3f)
+            {
+                float cornerBraking = cornerBrakingFactor * 0.6f; // Gentler corner braking
+                brakingIntensity = Mathf.Max(brakingIntensity, cornerBraking);
+            }
+            
+            // Cut throttle completely when actively braking
+            currentAcceleration = Mathf.Lerp(currentAcceleration, 0f, Time.deltaTime * accelerationSpeed * 2.0f);
+            
+            // Apply brakes gradually
+            currentBrake = Mathf.Lerp(currentBrake, brakingIntensity, Time.deltaTime * accelerationSpeed * 1.5f);
+            
+            isUsingNitro = false;
+            
+            // Enhanced debug visualization for active braking
+            if (showDebugInfo && brakingIntensity > 0.05f)
             {
                 Debug.DrawRay(transform.position + Vector3.up * 4f, Vector3.left * brakingIntensity * 5f, Color.red);
-                if (brakingIntensity > 0.3f) // Log significant braking events
+                if (brakingIntensity > 0.2f)
                 {
-                    Debug.Log($"Car {gameObject.name}: Braking with intensity {brakingIntensity:F2}, corner factor {cornerFactor:F2}");
+                    Debug.Log($"Car {gameObject.name}: Active braking with intensity {brakingIntensity:F2}, corner factor {cornerFactor:F2}");
                 }
             }
         }
+        else
+        {
+            // Coasting - gradually reduce inputs
+            currentAcceleration = Mathf.Lerp(currentAcceleration, 0f, Time.deltaTime * accelerationSpeed);
+            currentBrake = Mathf.Lerp(currentBrake, 0f, Time.deltaTime * accelerationSpeed);
+            isUsingNitro = false;
+        }
+        
+        // Use handbrake for sharp corners to prevent loss of control
+        currentHandbrake = cornerFactor > handbrakeThreshold ? Mathf.Lerp(currentHandbrake, (cornerFactor - handbrakeThreshold) * 1.5f, Time.deltaTime * accelerationSpeed) : 0f;
         
         // Apply inputs to vehicle controller
         if (vehicleController.inputManager != null)
