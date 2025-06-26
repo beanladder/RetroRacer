@@ -101,19 +101,30 @@ namespace Ashsvp
 
         void gearShift()
         {
-            for (int i = 0; i < gearSpeeds.Length; i++)
+            // Add a buffer to prevent rapid gear switching
+            float upShiftBuffer = 5f; // Speed buffer to shift up
+            float downShiftBuffer = 5f; // Speed buffer to shift down
+
+            // Shift up
+            if (currentGear < gearSpeeds.Length && VehicleSpeed > gearSpeeds[currentGear - 1] + upShiftBuffer)
             {
-                if (VehicleSpeed > gearSpeeds[i])
+                currentGear++;
+                if (CurrentGearProperty != currentGear)
                 {
-                    currentGear = i + 1;
+                    CurrentGearProperty = currentGear;
                 }
-                else break;
             }
-            if (CurrentGearProperty != currentGear)
+            // Shift down
+            else if (currentGear > 1 && VehicleSpeed < gearSpeeds[currentGear - 2] - downShiftBuffer)
             {
-                CurrentGearProperty = currentGear;
+                currentGear--;
+                if (CurrentGearProperty != currentGear)
+                {
+                    CurrentGearProperty = currentGear;
+                }
             }
         }
+
 
         public int CurrentGearProperty
         {
