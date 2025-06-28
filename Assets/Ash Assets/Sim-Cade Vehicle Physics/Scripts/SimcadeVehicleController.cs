@@ -58,7 +58,7 @@ namespace Ashsvp
         [Range(0, 100)] public float currentNitro = 100f;
         public bool isNitroActive;
         public bool isNitroCooldown;
-        public ParticleSystem nitroParticles;
+        public List<ParticleSystem> nitroParticles = new List<ParticleSystem>();
         public AudioSource nitroSound;
         private float originalAcceleration;
         private float originalMaxSpeed;
@@ -108,6 +108,19 @@ namespace Ashsvp
         void Awake()
         {
             inputManager = inputManager ?? GetComponent<InputManager_SVP>() ?? throw new MissingComponentException("Input Manager is missing.");
+            if (nitroParticles.Count == 0)
+            {
+                ParticleSystem[] foundParticles = GetComponentsInChildren<ParticleSystem>();
+                foreach (var ps in foundParticles)
+                {
+                    nitroParticles.Add(ps);
+                }
+
+
+                if (nitroParticles.Count == 0)
+                    Debug.LogWarning("No Nitro Particle Systems found on " + gameObject.name);
+            }
+
 
             GameObject SkidMarkController_Self = Instantiate(SkidMarkController);
             SkidMarkController_Self.GetComponent<Skidmarks>().SkidmarkWidth = skidmarkWidth;
@@ -278,9 +291,13 @@ void HandleCameraSwitch()
         {
             isNitroActive = true;
             VehicleEvents.OnNitroStart.Invoke();
-            
-            if(nitroParticles != null) nitroParticles.Play();
-            if(nitroSound != null) nitroSound.Play();
+
+            foreach (var ps in nitroParticles)
+            {
+                if (ps != null && !ps.isPlaying) ps.Play();
+            }
+
+            if (nitroSound != null) nitroSound.Play();
             
             float originalDrag = rb.linearDamping;
             Acceleration *= nitroAccelerationMultiplier;
@@ -298,9 +315,13 @@ void HandleCameraSwitch()
             Acceleration = originalAcceleration;
             MaxSpeed = originalMaxSpeed;
             rb.linearDamping = originalDrag;
-            
-            if(nitroParticles != null) nitroParticles.Stop();
-            
+
+            foreach (var ps in nitroParticles)
+            {
+                if (ps != null && ps.isPlaying) ps.Stop();
+            }
+
+
             isNitroActive = false;
             isNitroCooldown = true;
             VehicleEvents.OnNitroEnd.Invoke();
