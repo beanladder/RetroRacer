@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using UnityEngine.InputSystem;
 using static Ashsvp.InputManager_SVP;
 
 namespace Ashsvp
@@ -16,18 +17,12 @@ namespace Ashsvp
         private float aiAccelerationInput = 0f;
         private float aiHandbrakeInput = 0f;
         private bool aiNitroInput = false;
-        [Serializable]
-        public class KeyboardInput
-        {
-            public KeyCode steerLeft = KeyCode.A;
-            public KeyCode steerRight = KeyCode.D;
-            public KeyCode accelerate = KeyCode.W;
-            public KeyCode decelerate = KeyCode.S;
-            public KeyCode handBrake = KeyCode.Space;
-            public KeyCode cameraSwitch = KeyCode.C;
-        }
-
-        public KeyboardInput keyboardInput = new KeyboardInput();
+        
+        // New Input System
+        private InputSystem_Actions inputActions;
+        private Vector2 moveInput;
+        private bool sprintInput;
+        private bool cameraSwitchPressed;
 
         [Serializable]
         public class MobileInput
@@ -48,6 +43,51 @@ namespace Ashsvp
         public float HandbrakeInput { get; private set; }
         public bool NitroInput { get; private set; }
         public bool CameraSwitchInput { get; private set; }
+
+        private void Awake()
+        {
+            inputActions = new InputSystem_Actions();
+        }
+
+        private void OnEnable()
+        {
+            inputActions.Enable();
+            inputActions.Player.Move.performed += OnMove;
+            inputActions.Player.Move.canceled += OnMove;
+            inputActions.Player.Sprint.performed += OnSprint;
+            inputActions.Player.Sprint.canceled += OnSprint;
+            inputActions.Player.Jump.performed += OnJump;
+            inputActions.Player.Jump.canceled += OnJump;
+        }
+
+        private void OnDisable()
+        {
+            inputActions.Player.Move.performed -= OnMove;
+            inputActions.Player.Move.canceled -= OnMove;
+            inputActions.Player.Sprint.performed -= OnSprint;
+            inputActions.Player.Sprint.canceled -= OnSprint;
+            inputActions.Player.Jump.performed -= OnJump;
+            inputActions.Player.Jump.canceled -= OnJump;
+            inputActions.Disable();
+        }
+
+        private void OnMove(InputAction.CallbackContext context)
+        {
+            moveInput = context.ReadValue<Vector2>();
+        }
+
+        private void OnSprint(InputAction.CallbackContext context)
+        {
+            sprintInput = context.ReadValueAsButton();
+        }
+
+        private void OnJump(InputAction.CallbackContext context)
+        {
+            if (context.performed)
+            {
+                cameraSwitchPressed = true;
+            }
+        }
         
         
         // Method for AI to set inputs
@@ -74,9 +114,9 @@ namespace Ashsvp
             }
             
             // Otherwise use player inputs
-            float tempSteerInput = GetKeyboardSteerInput();
-            float tempAccelerationInput = GetKeyboardAccelerationInput();
-            float tempHandbrakeInput = GetKeyboardHandbrakeInput();
+            float tempSteerInput = GetNewInputSteerInput();
+            float tempAccelerationInput = GetNewInputAccelerationInput();
+            float tempHandbrakeInput = GetNewInputHandbrakeInput();
 
             if (useMobileInput)
             {
@@ -85,39 +125,31 @@ namespace Ashsvp
                 tempHandbrakeInput = GetMobileHandbrakeInput();
             }
 
-
-
             AccelerationInput = Mathf.Abs(tempAccelerationInput) > 0 ? Mathf.Lerp(AccelerationInput, tempAccelerationInput, 15 * Time.deltaTime) : 0;
             SteerInput = Mathf.Abs(tempSteerInput) > 0 ? Mathf.Lerp(SteerInput, tempSteerInput, 15 * Time.deltaTime)
                 : Mathf.Lerp(SteerInput, tempSteerInput, 25 * Time.deltaTime);
             HandbrakeInput = tempHandbrakeInput;
-            NitroInput = Input.GetKey(KeyCode.LeftShift);
-            CameraSwitchInput = useMobileInput ? mobileInput.cameraSwitch.isPressed : Input.GetKey(keyboardInput.cameraSwitch);
+            NitroInput = sprintInput;
+            CameraSwitchInput = useMobileInput ? mobileInput.cameraSwitch.isPressed : cameraSwitchPressed;
+            
+            // Reset camera switch after reading
+            if (cameraSwitchPressed)
+                cameraSwitchPressed = false;
         }
 
-        private float GetKeyboardSteerInput()
+        private float GetNewInputSteerInput()
         {
-            float steerInput = 0f;
-            if (Input.GetKey(keyboardInput.steerLeft))
-                steerInput -= 1f;
-            if (Input.GetKey(keyboardInput.steerRight))
-                steerInput += 1f;
-            return steerInput;
+            return moveInput.x;
         }
 
-        private float GetKeyboardAccelerationInput()
+        private float GetNewInputAccelerationInput()
         {
-            float accelInput = 0f;
-            if (Input.GetKey(keyboardInput.accelerate))
-                accelInput += 1f;
-            if (Input.GetKey(keyboardInput.decelerate))
-                accelInput -= 1f;
-            return accelInput;
+            return moveInput.y;
         }
 
-        private float GetKeyboardHandbrakeInput()
+        private float GetNewInputHandbrakeInput()
         {
-            return Input.GetKey(keyboardInput.handBrake) ? 1f : 0f;
+            return inputActions.Player.Jump.IsPressed() ? 1f : 0f;
         }
 
 

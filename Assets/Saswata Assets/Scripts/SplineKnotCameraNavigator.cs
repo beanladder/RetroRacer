@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Cinemachine;
 using UnityEngine.Splines;
+using UnityEngine.InputSystem;
 
 public class SplineKnotCameraNavigator : MonoBehaviour
 {
@@ -29,20 +30,22 @@ public class SplineKnotCameraNavigator : MonoBehaviour
         dolly.CameraPosition = targetPosition;
     }
 
-
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.RightArrow))
+        if (Keyboard.current != null)
         {
-            // Move right (decrement index)
-            currentKnotIndex = (currentKnotIndex - 1 + knotCount) % knotCount;
-            MoveToKnot(currentKnotIndex);
-        }
-        else if (Input.GetKeyDown(KeyCode.LeftArrow))
-        {
-            // Move left (increment index)
-            currentKnotIndex = (currentKnotIndex + 1) % knotCount;
-            MoveToKnot(currentKnotIndex);
+            if (Keyboard.current.rightArrowKey.wasPressedThisFrame)
+            {
+                // Move right (decrement index)
+                currentKnotIndex = (currentKnotIndex - 1 + knotCount) % knotCount;
+                MoveToKnot(currentKnotIndex);
+            }
+            else if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
+            {
+                // Move left (increment index)
+                currentKnotIndex = (currentKnotIndex + 1) % knotCount;
+                MoveToKnot(currentKnotIndex);
+            }
         }
 
         float current = dolly.CameraPosition;

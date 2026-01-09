@@ -1,12 +1,11 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class LocalAxisTorqueController : MonoBehaviour
 {
     public Rigidbody rb; // Reference to the Rigidbody component
-    public KeyCode rotateLeftKey = KeyCode.Q; // Default key for rotating left
-    public KeyCode rotateRightKey = KeyCode.E; // Default key for rotating right
     public float torqueAmount = 10f; // Amount of torque to apply
 
     void Awake()
@@ -15,17 +14,19 @@ public class LocalAxisTorqueController : MonoBehaviour
         if (!rb) rb = GetComponent<Rigidbody>();
     }
 
-
     void FixedUpdate()
     {
-        // Check for player input and apply torque accordingly
-        if (Input.GetKey(rotateLeftKey))
+        // Check for player input using new input system (Q and E keys)
+        if (Keyboard.current != null)
         {
-            ApplyTorque(-torqueAmount);
-        }
-        else if (Input.GetKey(rotateRightKey))
-        {
-            ApplyTorque(torqueAmount);
+            if (Keyboard.current.qKey.isPressed)
+            {
+                ApplyTorque(-torqueAmount);
+            }
+            else if (Keyboard.current.eKey.isPressed)
+            {
+                ApplyTorque(torqueAmount);
+            }
         }
     }
 
