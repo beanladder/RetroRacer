@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 using System.Collections.Generic;
 
 public class AIPersonalityManager : MonoBehaviour
@@ -131,15 +132,15 @@ public class AIPersonalityManager : MonoBehaviour
         // Apply personality to AI controller
         ApplyPersonalityToAI();
         
-        // Set up rivalries
-        SetupRivalries();
+        // Delay rivalry setup to ensure all AI personalities are initialized
+        StartCoroutine(SetupRivalriesDelayed());
         
         Debug.Log($"[AIPersonality] {gameObject.name} personality: {personality.personalityType} - {personality.GetPersonalityDescription()}");
     }
     
     private void Update()
     {
-        if (!aiController.IsRacing) return;
+        if (!aiController.IsRacing || personality == null) return;
         
         // Update pressure level
         UpdatePressureLevel();
@@ -324,6 +325,13 @@ public class AIPersonalityManager : MonoBehaviour
         }
     }
     
+    private IEnumerator SetupRivalriesDelayed()
+    {
+        // Wait a bit to ensure all AI personalities are initialized
+        yield return new WaitForSeconds(0.5f);
+        SetupRivalries();
+    }
+    
     private void SetupRivalries()
     {
         // Find potential rivals based on personality compatibility
@@ -331,7 +339,11 @@ public class AIPersonalityManager : MonoBehaviour
         
         foreach (var otherManager in allAIManagers)
         {
-            if (otherManager != this && ShouldBeRivals(personality, otherManager.personality))
+            // Add null checks to prevent NullReferenceException
+            if (otherManager != this && 
+                personality != null && 
+                otherManager.personality != null && 
+                ShouldBeRivals(personality, otherManager.personality))
             {
                 if (!rivals.Contains(otherManager))
                 {
@@ -346,6 +358,9 @@ public class AIPersonalityManager : MonoBehaviour
     
     private bool ShouldBeRivals(AIPersonality p1, AIPersonality p2)
     {
+        // Safety check - ensure both personalities are valid
+        if (p1 == null || p2 == null) return false;
+        
         // Aggressive personalities clash with each other
         if (p1.personalityType == AIPersonality.PersonalityType.Aggressive && 
             p2.personalityType == AIPersonality.PersonalityType.Aggressive)
@@ -375,6 +390,13 @@ public class AIPersonalityManager : MonoBehaviour
     
     private void UpdatePressureLevel()
     {
+        // Safety check - ensure personality is initialized
+        if (personality == null)
+        {
+            currentPressure = 0f;
+            return;
+        }
+        
         // Use shared race context manager for pressure calculation
         if (RaceContextManager.Instance != null)
         {

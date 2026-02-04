@@ -14,7 +14,7 @@ OcclusionCullingSettings:
 RenderSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 10
-  m_Fog: 1
+  m_Fog: 0
   m_FogColor: {r: 1, g: 0.6117647, b: 0.52156866, a: 1}
   m_FogMode: 3
   m_FogDensity: 0.01
@@ -367,7 +367,6 @@ GameObject:
   m_Component:
   - component: {fileID: 1054934332}
   - component: {fileID: 1054934331}
-  - component: {fileID: 1054934333}
   - component: {fileID: 1054934334}
   m_Layer: 0
   m_Name: RaceManager
@@ -394,19 +393,24 @@ MonoBehaviour:
   - {fileID: 5505070333310861898, guid: 68882d0ce68ab9e4da349189fe83d3e0, type: 3}
   - {fileID: 5133139713709978575, guid: 045ea7d5027d0b8468164902ce8cf621, type: 3}
   - {fileID: 5732929322218367154, guid: 57d987d5ad4d1e1418480394f89b0e87, type: 3}
-  numberOfAIRacers: 4
-  startingOffset: 15
-  minSkillLevel: 0.5
-  maxSkillLevel: 0.9
-  minAggressiveness: 0
-  maxAggressiveness: 1
-  rubberBandingStrength: 0.5
-  maxSpeedBoost: 2.93
-  maxSpeedPenalty: 0.9
+  numberOfAIRacers: 3
+  startingOffset: 12
+  minSkillLevel: 0.4
+  maxSkillLevel: 0.85
+  minAggressiveness: 0.4
+  maxAggressiveness: 0.9
+  rubberBandingStrength: 0.7
+  maxSpeedBoost: 1.25
+  maxSpeedPenalty: 0.85
   numberOfLaps: 3
   playerVehiclePrefab: {fileID: 321616085496138627, guid: 3de01424804a7cf41bbc5266ad066d86, type: 3}
   spawnPlayer: 1
   playerTag: Player
+  autoSetupAllVehicles: 1
+  setupPlayerVehicles: 1
+  respawnHeight: 2.5
+  respawnForwardOffset: 6
+  respawnInvulnerabilityTime: 2.5
   aiCarMaterials:
   - {fileID: 2100000, guid: 09dd114a7c81d4bee96d18ec88d96f72, type: 2}
   - {fileID: 2100000, guid: e8f5d5e75da404455a2997caaf2ad4ca, type: 2}
@@ -428,25 +432,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1054934333
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1054934330}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: da553179ca72b7848be2afe07e116368, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RaceSetupManager
-  autoSetupOnStart: 1
-  setupPlayerVehicles: 1
-  setupAIVehicles: 1
-  addRaceController: 1
-  respawnHeight: 5
-  respawnForwardOffset: 5
-  respawnInvulnerabilityTime: 2
 --- !u!114 &1054934334
 MonoBehaviour:
   m_ObjectHideFlags: 0

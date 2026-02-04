@@ -72,6 +72,9 @@ public class RaceContextManager : MonoBehaviour
     /// </summary>
     public float CalculatePressureLevel(AIVehicleController aiCar, AIPersonalityManager.AIPersonality personality, bool isInRivalry, float rivalryIntensity, int mistakeCount)
     {
+        // Safety checks
+        if (aiCar == null || personality == null) return 0f;
+        
         var context = GetRaceContext(aiCar);
         float pressure = 0f;
         
