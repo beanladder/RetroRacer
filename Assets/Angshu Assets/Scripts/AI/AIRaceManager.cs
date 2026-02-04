@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Track;
 using System.Linq;
+using Ashsvp;
 
 public class AIRaceManager : MonoBehaviour
 {
@@ -32,6 +33,12 @@ public class AIRaceManager : MonoBehaviour
     [SerializeField] private bool spawnPlayer = true;
     [SerializeField] private string playerTag = "Player";
     
+    [Header("Auto Setup")]
+    [SerializeField] private bool autoSetupAllVehicles = true;
+    [SerializeField] private bool setupPlayerVehicles = true;
+    [SerializeField] private float respawnHeight = 2f;
+    [SerializeField] private float respawnForwardOffset = 5f;
+    [SerializeField] private float respawnInvulnerabilityTime = 2f;
     [Header("AI Car Appearance")]
     [SerializeField] private List<Material> aiCarMaterials = new List<Material>();
     
@@ -61,6 +68,13 @@ public class AIRaceManager : MonoBehaviour
     
     private void Start()
     {
+        // Ensure RaceContextManager exists
+        if (RaceContextManager.Instance == null)
+        {
+            var contextManagerGO = new GameObject("RaceContextManager");
+            contextManagerGO.AddComponent<RaceContextManager>();
+        }
+        
         // Find track generator if not assigned
         if (trackGenerator == null)
         {
@@ -73,6 +87,9 @@ public class AIRaceManager : MonoBehaviour
             }
         }
         
+        // Subscribe to race controller events
+        RaceController.OnRaceStart += OnRaceStarted;
+        
         // Wait for track generation to complete before spawning AI racers
         StartCoroutine(SpawnAIRacersWhenReady());
         StartCoroutine(UpdatePositionsRoutine());
@@ -84,6 +101,41 @@ public class AIRaceManager : MonoBehaviour
         {
             if (child.CompareTag("Checkpoint")) totalCheckpoints++;
         }
+        
+        // Auto-setup all vehicles if enabled
+        if (autoSetupAllVehicles)
+        {
+            Invoke(nameof(SetupAllExistingVehicles), 2f); // Delay to ensure all objects are spawned
+        }
+    }
+    
+    private void OnDestroy()
+    {
+        // Unsubscribe from events
+        RaceController.OnRaceStart -= OnRaceStarted;
+    }
+    
+    private void OnRaceStarted()
+    {
+        raceStartTime = Time.time;
+        
+        // Enable racing for all AI
+        foreach(var racer in aiRacers)
+        {
+            if (racer != null)
+            {
+                racer.IsRacing = true;
+            }
+        }
+        
+        // Start rubber banding updates
+        if (!raceIsActive)
+        {
+            StartCoroutine(UpdateRubberBanding());
+            raceIsActive = true;
+        }
+        
+        Debug.Log("[AIRaceManager] Race started - AI racers enabled");
     }
     
     private IEnumerator SpawnAIRacersWhenReady()
@@ -100,8 +152,9 @@ public class AIRaceManager : MonoBehaviour
         
         SpawnAIRacers();
 
-        // Start the race with a countdown
-        StartCoroutine(StartRaceCountdown());
+        // Start the race with a countdown (handled by RaceController now)
+        // The RaceController will manage the countdown and enable AI racing
+        Debug.Log("AI racers spawned. RaceController will handle countdown and race start.");
     }
     
     private void SpawnAIRacers()
@@ -231,7 +284,7 @@ public class AIRaceManager : MonoBehaviour
                             Material mat = aiCarMaterials[aiIndex % aiCarMaterials.Count];
                             rend.material = mat;
                             materialApplied = true;
-                            Debug.Log($"[AIRaceManager] Applied material {mat.name} to {carObj.name} Body renderer");
+                            // Material assignment log removed - setup spam
                         }
                         else
                         {
@@ -260,7 +313,7 @@ public class AIRaceManager : MonoBehaviour
                             Material mat = aiCarMaterials[aiIndex % aiCarMaterials.Count];
                             mainRenderer.material = mat;
                             materialApplied = true;
-                            Debug.Log($"[AIRaceManager] Applied material {mat.name} to {carObj.name} main renderer ({mainRenderer.name})");
+                            // Material assignment log removed - setup spam
                         }
                         else
                         {
@@ -291,13 +344,13 @@ public class AIRaceManager : MonoBehaviour
             raceCars.Add(state);
             if (isPlayer) playerState = state;
             
-            // Add CarTriggerHandler component to handle fall/checkpoint detection
-            var triggerHandler = carObj.GetComponent<CarTriggerHandler>();
-            if (triggerHandler == null)
+            // Add RobustRespawnSystem component to handle fall/checkpoint detection
+            var respawnSystem = carObj.GetComponent<RobustRespawnSystem>();
+            if (respawnSystem == null)
             {
-                triggerHandler = carObj.AddComponent<CarTriggerHandler>();
+                respawnSystem = carObj.AddComponent<RobustRespawnSystem>();
+                ConfigureRespawnSystem(respawnSystem);
             }
-            triggerHandler.raceManager = this;
             
             // Configure AI controller if present
             var aiControllerConfig = carObj.GetComponent<AIVehicleController>();
@@ -411,47 +464,9 @@ public class AIRaceManager : MonoBehaviour
             }
         }
         
-        // Debug log for positions
-        string posLog = "[RaceManager] Positions: ";
-        for (int i = 0; i < allCarsWithProgress.Count; i++)
-        {
-            var (state, progress) = allCarsWithProgress[i];
-            string carName = state.aiController != null ? state.aiController.gameObject.name : state.car.name;
-            posLog += $"{i+1}:{carName} ";
-        }
-        Debug.Log(posLog);
+        // Position tracking removed - was too noisy
     }
 
-    private IEnumerator StartRaceCountdown()
-    {
-        yield return new WaitForSeconds(1.0f);
-        Debug.Log("<color=yellow>3...</color>");
-        yield return new WaitForSeconds(1.0f);
-        Debug.Log("<color=yellow>2...</color>");
-        yield return new WaitForSeconds(1.0f);
-        Debug.Log("<color=yellow>1...</color>");
-        yield return new WaitForSeconds(1.0f);
-        Debug.Log("<color=green>GO!</color>");
-
-        raceStartTime = Time.time;
-        // Enable racing for all AI
-        foreach(var racer in aiRacers)
-        {
-            if (racer != null)
-            {
-                racer.IsRacing = true;
-            }
-        }
-        // Optionally, send event to player car to enable control
-
-        // Now that the race has officially started, begin the rubber banding updates.
-        if (!raceIsActive)
-        {
-            StartCoroutine(UpdateRubberBanding());
-            raceIsActive = true;
-        }
-    }
-    
     private IEnumerator UpdateRubberBanding()
     {
         while (true)
@@ -659,34 +674,75 @@ public class AIRaceManager : MonoBehaviour
         var state = raceCars.Find(s => s.car == car);
         if (state == null || state.finished) return;
         
-        // Teleport to last checkpoint
+        // Get or add the robust respawn system
+        RobustRespawnSystem respawnSystem = car.GetComponent<RobustRespawnSystem>();
+        if (respawnSystem == null)
+        {
+            respawnSystem = car.AddComponent<RobustRespawnSystem>();
+            ConfigureRespawnSystem(respawnSystem);
+        }
+        
+        // Check if car is already respawning or in invulnerability period
+        if (respawnSystem.IsRespawning() || respawnSystem.IsInvulnerable())
+        {
+            return;
+        }
+        
+        // Respawn to last checkpoint
         if (state.lastCheckpoint >= 0)
         {
             Transform checkpoint = GetCheckpointTransform(state.lastCheckpoint);
             if (checkpoint != null)
             {
-                car.transform.position = checkpoint.position + Vector3.up * 2f;
-                car.transform.rotation = checkpoint.rotation;
-                Debug.Log($"{car.name} fell! Teleported to checkpoint {state.lastCheckpoint}");
+                respawnSystem.RespawnAtCheckpoint(checkpoint);
+                Debug.Log($"{car.name} fell! Respawning at checkpoint {state.lastCheckpoint}");
+            }
+            else
+            {
+                Debug.LogWarning($"Checkpoint {state.lastCheckpoint} not found for {car.name}");
+                RespawnAtStartLine(car, respawnSystem);
             }
         }
         else
         {
-            // If no checkpoint reached yet, teleport to start
-            Transform startFinishLine = null;
-            foreach (Transform child in trackGenerator.transform)
+            // If no checkpoint reached yet, respawn at start
+            RespawnAtStartLine(car, respawnSystem);
+        }
+    }
+    
+    private void RespawnAtStartLine(GameObject car, RobustRespawnSystem respawnSystem)
+    {
+        Transform startFinishLine = null;
+        foreach (Transform child in trackGenerator.transform)
+        {
+            if (child.name == "StartFinishLine")
             {
-                if (child.name == "StartFinishLine")
-                {
-                    startFinishLine = child;
-                    break;
-                }
+                startFinishLine = child;
+                break;
             }
-            if (startFinishLine != null)
+        }
+        
+        if (startFinishLine != null)
+        {
+            respawnSystem.RespawnAtStartLine(startFinishLine);
+            Debug.Log($"{car.name} fell! Respawning at start line (no checkpoint reached)");
+        }
+        else
+        {
+            // Fallback: use racing line start position
+            if (trackGenerator.RacingLine != null && trackGenerator.RacingLine.Points.Count > 0)
             {
-                car.transform.position = startFinishLine.position + Vector3.up * 2f;
-                car.transform.rotation = startFinishLine.rotation;
-                Debug.Log($"{car.name} fell! Teleported to start line (no checkpoint reached)");
+                Vector3 startPos = trackGenerator.transform.TransformPoint(trackGenerator.RacingLine.Points[0]);
+                Vector3 nextPos = trackGenerator.transform.TransformPoint(trackGenerator.RacingLine.Points[5]);
+                Vector3 direction = (nextPos - startPos).normalized;
+                Quaternion rotation = Quaternion.LookRotation(direction, Vector3.up);
+                
+                respawnSystem.RespawnAt(startPos, rotation);
+                Debug.Log($"{car.name} fell! Respawning at racing line start (fallback)");
+            }
+            else
+            {
+                Debug.LogError($"No valid respawn position found for {car.name}");
             }
         }
     }
@@ -839,7 +895,7 @@ public class AIRaceManager : MonoBehaviour
             {
                 rend.material = mat;
                 materialApplied = true;
-                Debug.Log($"[AIRaceManager] Applied material {mat.name} to {carObj.name} Body renderer");
+                // Material assignment log removed - setup spam
             }
         }
         
@@ -863,7 +919,7 @@ public class AIRaceManager : MonoBehaviour
                 
                 mainRenderer.material = mat;
                 materialApplied = true;
-                Debug.Log($"[AIRaceManager] Applied material {mat.name} to {carObj.name} main renderer ({mainRenderer.name})");
+                // Material assignment log removed - setup spam
             }
         }
         
@@ -883,5 +939,157 @@ public class AIRaceManager : MonoBehaviour
                 ApplyMaterialToAICar(aiRacers[i].gameObject, i);
             }
         }
+    }
+    
+    // === INTEGRATED RACE SETUP FUNCTIONALITY ===
+    
+    /// <summary>
+    /// Setup all existing vehicles in the scene (integrated from RaceSetupManager)
+    /// </summary>
+    [ContextMenu("Setup All Existing Vehicles")]
+    public void SetupAllExistingVehicles()
+    {
+        Debug.Log("[AIRaceManager] Setting up all existing vehicles...");
+        
+        // Find all vehicles with SimcadeVehicleController
+        var allVehicles = FindObjectsByType<SimcadeVehicleController>(FindObjectsSortMode.None);
+        
+        int playerCount = 0;
+        int aiCount = 0;
+        
+        foreach (var vehicle in allVehicles)
+        {
+            if (vehicle == null) continue;
+            
+            bool isPlayer = vehicle.CompareTag("Player") || vehicle.GetComponent<AIVehicleController>() == null;
+            
+            if (isPlayer && setupPlayerVehicles)
+            {
+                SetupPlayerVehicle(vehicle.gameObject);
+                playerCount++;
+            }
+            else if (!isPlayer)
+            {
+                SetupExistingAIVehicle(vehicle.gameObject);
+                aiCount++;
+            }
+        }
+        
+        Debug.Log($"[AIRaceManager] Vehicle setup complete: {playerCount} player vehicles, {aiCount} AI vehicles");
+    }
+    
+    private void SetupPlayerVehicle(GameObject vehicle)
+    {
+        // Add robust respawn system
+        RobustRespawnSystem respawnSystem = vehicle.GetComponent<RobustRespawnSystem>();
+        if (respawnSystem == null)
+        {
+            respawnSystem = vehicle.AddComponent<RobustRespawnSystem>();
+            ConfigureRespawnSystem(respawnSystem);
+        }
+        
+        // Ensure InputManager exists
+        var inputManager = vehicle.GetComponent<Ashsvp.InputManager_SVP>();
+        if (inputManager == null)
+        {
+            Debug.LogWarning($"[AIRaceManager] Player vehicle {vehicle.name} missing InputManager_SVP component!");
+        }
+        
+        // Setup logs removed - too verbose during setup
+    }
+    
+    private void SetupExistingAIVehicle(GameObject vehicle)
+    {
+        // Add robust respawn system
+        RobustRespawnSystem respawnSystem = vehicle.GetComponent<RobustRespawnSystem>();
+        if (respawnSystem == null)
+        {
+            respawnSystem = vehicle.AddComponent<RobustRespawnSystem>();
+            ConfigureRespawnSystem(respawnSystem);
+        }
+        
+        // Add smooth steering controller
+        SmoothSteeringController smoothSteering = vehicle.GetComponent<SmoothSteeringController>();
+        if (smoothSteering == null)
+        {
+            smoothSteering = vehicle.AddComponent<SmoothSteeringController>();
+        }
+        
+        // Ensure AI components exist
+        AIVehicleController aiController = vehicle.GetComponent<AIVehicleController>();
+        if (aiController == null)
+        {
+            Debug.LogWarning($"[AIRaceManager] AI vehicle {vehicle.name} missing AIVehicleController component!");
+        }
+        
+        // Setup logs removed - too verbose during setup
+    }
+    
+    private void ConfigureRespawnSystem(RobustRespawnSystem respawnSystem)
+    {
+        // Use reflection to set private fields since they're not exposed as public properties
+        var respawnHeightField = typeof(RobustRespawnSystem).GetField("respawnHeight", 
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (respawnHeightField != null)
+        {
+            respawnHeightField.SetValue(respawnSystem, respawnHeight);
+        }
+        
+        var respawnOffsetField = typeof(RobustRespawnSystem).GetField("respawnForwardOffset", 
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (respawnOffsetField != null)
+        {
+            respawnOffsetField.SetValue(respawnSystem, respawnForwardOffset);
+        }
+        
+        var invulnerabilityField = typeof(RobustRespawnSystem).GetField("respawnInvulnerabilityTime", 
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        if (invulnerabilityField != null)
+        {
+            invulnerabilityField.SetValue(respawnSystem, respawnInvulnerabilityTime);
+        }
+    }
+    
+    [ContextMenu("Test Player Respawn")]
+    public void TestPlayerRespawn()
+    {
+        // Find player vehicle and test respawn
+        var allVehicles = FindObjectsByType<SimcadeVehicleController>(FindObjectsSortMode.None);
+        
+        foreach (var vehicle in allVehicles)
+        {
+            if (vehicle.CompareTag("Player"))
+            {
+                RobustRespawnSystem respawnSystem = vehicle.GetComponent<RobustRespawnSystem>();
+                if (respawnSystem != null)
+                {
+                    respawnSystem.TestRespawnHere();
+                    Debug.Log($"[AIRaceManager] Tested respawn for player vehicle: {vehicle.name}");
+                    return;
+                }
+            }
+        }
+        
+        Debug.LogWarning("[AIRaceManager] No player vehicle found for respawn test");
+    }
+    
+    // === PRESET CONFIGURATIONS ===
+    
+    [ContextMenu("Apply 3-Racer Competitive Preset (RECOMMENDED)")]
+    public void ApplyCompetitivePreset()
+    {
+        AIRaceManagerPresets.ApplyThreeRacerPreset(this);
+    }
+    
+    [ContextMenu("Apply 3-Racer Casual Preset")]
+    public void ApplyCasualPreset()
+    {
+        AIRaceManagerPresets.ApplyThreeRacerCasualPreset(this);
+    }
+    
+    [ContextMenu("Apply 3-Racer Hardcore Preset")]
+    public void ApplyHardcorePreset()
+    {
+        AIRaceManagerPresets.ApplyThreeRacerHardcorePreset(this);
     }
 }

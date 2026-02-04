@@ -113,7 +113,19 @@ namespace Ashsvp
                 return;
             }
             
-            // Otherwise use player inputs
+            // Check race state for player input
+            if (!RaceController.IsRaceActive)
+            {
+                // During countdown or before race starts, disable player input
+                SteerInput = 0f;
+                AccelerationInput = 0f;
+                HandbrakeInput = 1f; // Keep handbrake on to prevent movement
+                NitroInput = false;
+                CameraSwitchInput = false;
+                return;
+            }
+            
+            // Otherwise use player inputs (race is active)
             float tempSteerInput = GetNewInputSteerInput();
             float tempAccelerationInput = GetNewInputAccelerationInput();
             float tempHandbrakeInput = GetNewInputHandbrakeInput();

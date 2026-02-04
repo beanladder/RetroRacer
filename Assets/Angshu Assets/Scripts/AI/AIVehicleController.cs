@@ -29,12 +29,6 @@ public class AIVehicleController : MonoBehaviour
     [SerializeField, Range(0f, 10f), Tooltip("How quickly the AI adjusts its acceleration/braking. Higher values make throttle control more responsive")]
     private float accelerationSpeed = 1.5f;
     
-    [SerializeField, Tooltip("Whether the AI should use nitro on straight sections of the track")]
-    private bool useNitroOnStraights = true;
-    
-    [SerializeField, Range(0f, 1f), Tooltip("Minimum recommended speed threshold for using nitro. Higher values mean nitro is only used on longer straights")]
-    private float nitroThreshold = 0.85f;
-    
   
     
     [SerializeField, Tooltip("Layer mask for sensor raycasts (should include the layer that cars are on)")]
@@ -136,9 +130,25 @@ public class AIVehicleController : MonoBehaviour
     [SerializeField]
     private bool isDrifty = false;
     
-    // Nitro system for AI
-    private float aiNitroCooldownTimer = 0f;
-    private float aiNitroCooldownDuration = 0f;
+    // Strategic Nitro system (consolidated from SmartNitroSystem)
+    private float nitroDecisionCooldown = 0f;
+    private float lastNitroUseTime = 0f;
+    private NitroStrategy currentNitroStrategy = NitroStrategy.Conservative;
+    
+    // Race context for nitro decisions
+    private int currentPosition = 1;
+    private int totalRacers = 1;
+    private bool isBeingPressured = false;
+    private bool hasOpportunityAhead = false;
+    
+    public enum NitroStrategy
+    {
+        Conservative,   // Save nitro for key moments
+        Aggressive,     // Use nitro to attack
+        Defensive,      // Use nitro to defend position
+        Opportunistic,  // Use nitro when opportunity arises
+        Desperate       // Use nitro when far behind
+    }
     
     // Nitro slowdown state
     private float nitroSlowdownTimer = 0f;
@@ -148,9 +158,22 @@ public class AIVehicleController : MonoBehaviour
     // Nitro at race start
     private bool forceStartNitro = false;
     private float startNitroTimer = 0f;
-    private float startNitroDuration = 2f;
     
+    // Enhanced AI systems
+    private AIPersonalityManager personalityManager;
+    private SmoothSteeringController smoothSteeringController;
     private bool wasRacing = false;
+    private float startNitroDuration = 3f;
+    
+    // Behavior modification system
+    private float behaviorModifier_braking = 0f;
+    private float behaviorModifier_steering = 0f;
+    private float behaviorModifier_throttle = 0f;
+    private float behaviorModifier_aggression = 0f;
+    private float behaviorModifier_blocking = 0f;
+    private float behaviorModifier_speed = 0f;
+    private float behaviorModifier_defense = 0f;
+    private float behaviorModifier_pathRandomness = 0f;
     
     [Header("Mischief Car")]
     public bool isMischiefCar = false;
@@ -221,10 +244,7 @@ public class AIVehicleController : MonoBehaviour
             handbrakeThresholdRandomized = Random.Range(0.12f, 0.19f);
             vehicleController.driftFactor = Random.Range(0.52f, 0.63f);
       
-        Debug.Log($"[AI] {gameObject.name} isDrifty={isDrifty}, handbrakeStrength={handbrakeStrength:F2}, handbrakeThreshold={handbrakeThresholdRandomized:F2}, driftFactor={vehicleController.driftFactor:F2}");
-
-        aiNitroCooldownDuration = Random.Range(22f, 30f);
-        aiNitroCooldownTimer = aiNitroCooldownDuration;
+        // AI setup details removed - too verbose
 
         // Randomize nitro acceleration multiplier for this AI car
         vehicleController.nitroAccelerationMultiplier = Random.Range(1.01f, 1.05f);
@@ -232,6 +252,29 @@ public class AIVehicleController : MonoBehaviour
         
         // Set higher turn angle for all AI cars
         vehicleController.MaxTurnAngle = Random.Range(32f, 35f);
+        
+        // Initialize enhanced AI systems
+        personalityManager = GetComponent<AIPersonalityManager>();
+        if (personalityManager == null)
+        {
+            personalityManager = gameObject.AddComponent<AIPersonalityManager>();
+        }
+        
+        // Initialize strategic nitro system
+        DetermineInitialNitroStrategy();
+        
+        // Register with race context manager
+        if (RaceContextManager.Instance != null)
+        {
+            RaceContextManager.Instance.RegisterAICar(this);
+        }
+        
+        // Initialize smooth steering controller
+        smoothSteeringController = GetComponent<SmoothSteeringController>();
+        if (smoothSteeringController == null)
+        {
+            smoothSteeringController = gameObject.AddComponent<SmoothSteeringController>();
+        }
     }
     
     private void Start()
@@ -326,9 +369,13 @@ public class AIVehicleController : MonoBehaviour
         UpdateOvertakingLogic(idealTargetSpeed);
         currentOvertakeOffset = Mathf.Lerp(currentOvertakeOffset, targetOvertakeOffset, Time.deltaTime * 2f);
 
-        // --- NEW: Dynamic Avoidance System ---
-        float avoidanceOffset = CalculateDynamicAvoidanceOffset();
-        // Commitment logic: only change direction every X seconds
+        // --- NEW: Dynamic Avoidance System (Smoothed) ---
+        float rawAvoidanceOffset = CalculateDynamicAvoidanceOffset();
+        
+        // Smooth the avoidance offset to prevent sudden changes
+        float avoidanceOffset = smoothSteeringController.SmoothLateralOffset(rawAvoidanceOffset);
+        
+        // Commitment logic: only change direction every X seconds (but smoother)
         if (Time.time - lastAvoidanceDecisionTime > avoidanceCommitmentDuration)
         {
             committedAvoidanceOffset = avoidanceOffset;
@@ -337,14 +384,20 @@ public class AIVehicleController : MonoBehaviour
         }
         else
         {
+            // Gradually blend towards new avoidance offset instead of sudden changes
+            committedAvoidanceOffset = Mathf.Lerp(committedAvoidanceOffset, avoidanceOffset, Time.deltaTime * 1.5f);
             avoidanceCommitmentTimer -= Time.deltaTime;
         }
 
-        float randomOffset = (pathRandomness > 0)
-            ? (Mathf.PerlinNoise(Time.time * randomnessChangeRate, perlinSeed) * 2f - 1f) * pathRandomness
+        // Apply behavior modifiers from personality system (smoothed)
+        float effectivePathRandomness = pathRandomness + behaviorModifier_pathRandomness;
+        float randomOffset = (effectivePathRandomness > 0)
+            ? (Mathf.PerlinNoise(Time.time * randomnessChangeRate, perlinSeed) * 2f - 1f) * effectivePathRandomness
             : 0f;
 
-        float totalLateralOffset = randomOffset + currentOvertakeOffset + committedAvoidanceOffset;
+        // Smooth and limit the total lateral offset to prevent sudden path changes
+        float rawTotalLateralOffset = randomOffset + currentOvertakeOffset + committedAvoidanceOffset;
+        float totalLateralOffset = smoothSteeringController.SmoothLateralOffset(rawTotalLateralOffset);
 
         if (totalLateralOffset != 0)
         {
@@ -357,8 +410,37 @@ public class AIVehicleController : MonoBehaviour
         
         Vector3 worldTargetPoint = trackGenerator.transform.TransformPoint(targetPoint);
         
-        // --- 4. Calculate final speed and steering ---
-        currentSteer = Mathf.Lerp(currentSteer, GetTargetSteer(worldTargetPoint), Time.deltaTime * steeringSpeed * (1f + skillLevel));
+        // --- 4. Calculate final speed and steering with behavior modifiers ---
+        float rawTargetSteer = GetTargetSteer(worldTargetPoint);
+        
+        // Apply smoothed steering behavior modifier
+        float smoothedBehaviorModifier = smoothSteeringController.SmoothBehaviorModifier(behaviorModifier_steering);
+        rawTargetSteer += smoothedBehaviorModifier;
+        rawTargetSteer = Mathf.Clamp(rawTargetSteer, -maxSteeringAngle, maxSteeringAngle);
+        
+        // Check if this is an emergency avoidance situation
+        bool isEmergencyAvoidance = false;
+        if (otherVehicles.Count > 0)
+        {
+            foreach (var other in otherVehicles)
+            {
+                if (other != null && other.isActiveAndEnabled)
+                {
+                    float distance = Vector3.Distance(transform.position, other.transform.position);
+                    if (smoothSteeringController.ShouldUseEmergencyAvoidance(other.transform.position, distance))
+                    {
+                        isEmergencyAvoidance = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Apply smooth steering to prevent sudden unrealistic turns
+        float targetSteer = smoothSteeringController.SmoothSteeringInput(rawTargetSteer, isEmergencyAvoidance);
+        
+        // Final steering application with smoothing
+        currentSteer = Mathf.Lerp(currentSteer, targetSteer, Time.deltaTime * steeringSpeed * (1f + skillLevel));
         float finalTargetSpeed = idealTargetSpeed * RubberBandingFactor;
 
         // Determine acceleration/braking
@@ -401,6 +483,10 @@ public class AIVehicleController : MonoBehaviour
             float accelerationFactor = 1.0f - (cornerFactor * 3.0f); // More aggressive acceleration reduction near corners
             accelerationFactor = Mathf.Max(0.05f, accelerationFactor); // Lower minimum acceleration
             
+            // Apply throttle behavior modifier
+            accelerationFactor += behaviorModifier_throttle;
+            accelerationFactor = Mathf.Clamp01(accelerationFactor);
+            
             currentAcceleration = Mathf.Lerp(currentAcceleration, accelerationFactor, Time.deltaTime * accelerationSpeed);
             currentBrake = Mathf.Lerp(currentBrake, 0f, Time.deltaTime * accelerationSpeed * 2.0f); // Release brakes quickly
         }
@@ -438,6 +524,10 @@ public class AIVehicleController : MonoBehaviour
                 brakingIntensity = Mathf.Max(brakingIntensity, cornerBraking);
             }
             
+            // Apply braking behavior modifier
+            brakingIntensity += behaviorModifier_braking;
+            brakingIntensity = Mathf.Clamp01(brakingIntensity);
+            
             // Cut throttle completely when actively braking
             currentAcceleration = Mathf.Lerp(currentAcceleration, 0f, Time.deltaTime * accelerationSpeed * 2.0f);
             
@@ -457,10 +547,7 @@ public class AIVehicleController : MonoBehaviour
         {
             // "Press" handbrake hard at the start of a sharp corner
             currentHandbrake = Mathf.Lerp(currentHandbrake, 1.0f, Time.deltaTime * 2f);
-            if (showDebugInfo && currentHandbrake > 0.7f)
-            {
-                Debug.Log($"[AI] {gameObject.name} DRIFTING! Handbrake: {currentHandbrake:F2} (cornerFactor: {cornerFactor:F2})");
-            }
+            // Drifting log removed - too frequent
         }
         else
         {
@@ -468,39 +555,42 @@ public class AIVehicleController : MonoBehaviour
             currentHandbrake = Mathf.Lerp(currentHandbrake, 0f, Time.deltaTime * 2f);
         }
         
-        // --- SIMPLE AI Nitro System ---
-        aiNitroCooldownTimer -= Time.deltaTime;
+        // --- Strategic AI Nitro System ---
+        nitroDecisionCooldown -= Time.deltaTime;
         if (nitroSlowdownTimer > 0f) nitroSlowdownTimer -= Time.deltaTime;
-        float lookaheadCorner = GetLookaheadCornerFactor(1f);
-        float doubleLookaheadCorner = GetLookaheadCornerFactor(2f);
-        bool isSafeForNitro = lookaheadCorner < 0.1f && doubleLookaheadCorner < 0.1f;
+        
+        // Update race context for nitro decisions
+        UpdateNitroRaceContext();
+        
+        // Determine current strategy
+        UpdateNitroStrategy();
+        
+        // Make strategic nitro decision
+        bool useNitro = false;
+        if (nitroDecisionCooldown <= 0f)
+        {
+            useNitro = MakeStrategicNitroDecision();
+            nitroDecisionCooldown = Random.Range(0.5f, 1.5f); // Check every 0.5-1.5 seconds
+        }
+        
+        // Handle forced start nitro
         if (forceStartNitro)
         {
             startNitroTimer -= Time.deltaTime;
+            float lookaheadCorner = GetLookaheadCornerFactor(1f);
+            float doubleLookaheadCorner = GetLookaheadCornerFactor(2f);
+            bool isSafeForNitro = lookaheadCorner < 0.1f && doubleLookaheadCorner < 0.1f;
+            
             if (startNitroTimer > 0f && isSafeForNitro)
             {
-                // Force nitro at race start (only if both lookaheads are safe)
-                if (vehicleController.inputManager != null)
-                {
-                    vehicleController.inputManager.SetAIInputs(currentSteer, currentAcceleration, currentHandbrake > 0f ? currentHandbrake : currentBrake, true);
-                }
-                return;
+                useNitro = true;
             }
             else
             {
                 forceStartNitro = false;
             }
         }
-        bool canUseNitro = aiNitroCooldownTimer <= 0f && vehicleController.currentNitro > 10f && !vehicleController.isNitroActive && !vehicleController.isNitroCooldown;
-        bool useNitro = false;
-        if (canUseNitro && isSafeForNitro && Random.value < 0.3f)
-        {
-            useNitro = true;
-            aiNitroCooldownTimer = aiNitroCooldownDuration = Random.Range(22f, 30f); // Reset cooldown
-            nitroSlowdownTimer = nitroSlowdownDuration;
-            isNitroSlowingDown = true;
-            Debug.Log($"[AI] {gameObject.name} USING NITRO! (Simple 30% logic, double lookahead)");
-        }
+        
         if (vehicleController.inputManager != null)
         {
             vehicleController.inputManager.SetAIInputs(currentSteer, currentAcceleration, currentHandbrake > 0f ? currentHandbrake : currentBrake, useNitro);
@@ -564,11 +654,11 @@ public class AIVehicleController : MonoBehaviour
             {
                 isDefending = false;
                 vehicleController.Acceleration = originalAcceleration;
-                Debug.Log($"<color=red>{gameObject.name} has STOPPED defending.</color>");
+                // Defense log removed - too frequent
             }
         }
 
-        // Mischief Car behavior
+        // Mischief Car behavior (Improved - Less Aggressive)
         if (isMischiefCar)
         {
             mischiefRammingCooldown -= Time.deltaTime;
@@ -577,7 +667,8 @@ public class AIVehicleController : MonoBehaviour
                 AIVehicleController target = null;
                 float closestDist = 999f;
                 string ramType = "";
-                // Try to find a car to side-ram (beside)
+                
+                // Try to find a car to side-ram (beside) - but less aggressively
                 foreach (var other in otherVehicles)
                 {
                     if (other == null || !other.isActiveAndEnabled) continue;
@@ -585,15 +676,17 @@ public class AIVehicleController : MonoBehaviour
                     float dist = toOther.magnitude;
                     float sideDot = Vector3.Dot(transform.right, toOther.normalized);
                     float forwardDot = Vector3.Dot(transform.forward, toOther.normalized);
-                    // Side-ram: car is within 10m and mostly to the side
-                    if (Mathf.Abs(sideDot) > 0.7f && Mathf.Abs(forwardDot) < 0.5f && dist < 10f && dist < closestDist)
+                    
+                    // Side-ram: car is within 8m and mostly to the side (reduced from 10m)
+                    if (Mathf.Abs(sideDot) > 0.7f && Mathf.Abs(forwardDot) < 0.5f && dist < 8f && dist < closestDist)
                     {
                         target = other;
                         closestDist = dist;
                         ramType = "side";
                     }
                 }
-                // If no side target, try to back-ram (in front)
+                
+                // If no side target, try to back-ram (in front) - but more conservatively
                 if (target == null)
                 {
                     foreach (var other in otherVehicles)
@@ -602,8 +695,9 @@ public class AIVehicleController : MonoBehaviour
                         Vector3 toOther = other.transform.position - transform.position;
                         float dist = toOther.magnitude;
                         float forwardDot = Vector3.Dot(transform.forward, toOther.normalized);
-                        // Back-ram: car is within 15m and mostly in front
-                        if (forwardDot > 0.7f && dist > 4f && dist < 15f && dist < closestDist)
+                        
+                        // Back-ram: car is within 12m and mostly in front (reduced from 15m)
+                        if (forwardDot > 0.7f && dist > 4f && dist < 12f && dist < closestDist)
                         {
                             target = other;
                             closestDist = dist;
@@ -611,27 +705,48 @@ public class AIVehicleController : MonoBehaviour
                         }
                     }
                 }
-                // If a target is found, steer/accelerate to ram
+                
+                // If a target is found, apply mischief behavior (but smoothly)
                 if (target != null)
                 {
+                    // Check if we're in a corner - reduce mischief in corners to prevent track departure
+                    float mischiefCornerFactor = DetectUpcomingCorners();
+                    if (mischiefCornerFactor > 0.4f)
+                    {
+                        // Skip mischief in sharp corners
+                        mischiefRammingCooldown = mischiefRammingInterval * 0.5f; // Shorter cooldown
+                        return;
+                    }
+                    
                     Vector3 toTarget = target.transform.position - transform.position;
                     Vector3 localToTarget = transform.InverseTransformDirection(toTarget);
-                    // Side-ram: steer hard toward the side
+                    
+                    // Side-ram: steer toward the side (but smoothly)
                     if (ramType == "side")
                     {
                         float steerDir = Mathf.Sign(localToTarget.x);
-                        currentSteer = Mathf.Lerp(currentSteer, steerDir * maxSteeringAngle, Time.deltaTime * 5f);
-                        Debug.Log($"[AI Mischief] {gameObject.name} attempting SIDE RAM on {target.gameObject.name}");
+                        float targetMischiefSteer = steerDir * maxSteeringAngle * 0.6f; // Reduced intensity
+                        
+                        // Apply smooth steering through the steering controller
+                        float smoothedMischiefSteer = smoothSteeringController.SmoothSteeringInput(targetMischiefSteer, false);
+                        currentSteer = Mathf.Lerp(currentSteer, smoothedMischiefSteer, Time.deltaTime * 3f); // Reduced from 5f
+                        
+                        // Mischief log removed - too frequent
                     }
-                    // Back-ram: accelerate hard
+                    // Back-ram: accelerate (but not as aggressively)
                     else if (ramType == "back")
                     {
-                        currentAcceleration = Mathf.Lerp(currentAcceleration, 1.2f, Time.deltaTime * 3f); // Over-accelerate
-                        Debug.Log($"[AI Mischief] {gameObject.name} attempting BACK RAM on {target.gameObject.name}");
+                        currentAcceleration = Mathf.Lerp(currentAcceleration, 1.1f, Time.deltaTime * 2f); // Reduced from 1.2f and 3f
+                        // Mischief log removed - too frequent
                     }
-                    // Add a little random handbrake for chaos
-                    if (Random.value < 0.2f) currentHandbrake = Mathf.Lerp(currentHandbrake, 0.5f, Time.deltaTime * 2f);
+                    
+                    // Reduced random handbrake chaos
+                    if (Random.value < 0.1f) // Reduced from 0.2f
+                    {
+                        currentHandbrake = Mathf.Lerp(currentHandbrake, 0.3f, Time.deltaTime * 1.5f); // Reduced intensity
+                    }
                 }
+                
                 mischiefRammingCooldown = mischiefRammingInterval + Random.Range(-0.5f, 0.5f);
             }
         }
@@ -672,7 +787,7 @@ public class AIVehicleController : MonoBehaviour
             Vector3 directionToTargetCar = carToOvertake.transform.position - transform.position;
             if (Vector3.Dot(transform.forward, directionToTargetCar) < 0)
             {
-                Debug.Log($"<color=cyan>{gameObject.name} has COMPLETED overtaking {carToOvertake.name}.</color>");
+                // Overtake completion log removed - too frequent
                 isOvertaking = false;
                 targetOvertakeOffset = 0f;
                 overtakeCooldownTimer = overtakeCooldown;
@@ -691,7 +806,7 @@ public class AIVehicleController : MonoBehaviour
             
             if (timeStuck > overtakeTriggerTime)
             {
-                Debug.Log($"<color=orange>{gameObject.name} is STARTING to overtake {leadCar.name}!</color>");
+                // Overtake start log removed - too frequent
                 isOvertaking = true;
                 carToOvertake = leadCar;
                 timeStuck = 0f;
@@ -861,7 +976,7 @@ public class AIVehicleController : MonoBehaviour
             defenseDuration = Random.Range(5f, 10f);
             defenseTimer = 0f;
             vehicleController.Acceleration = attackerAcceleration;
-            Debug.Log($"<color=red>{gameObject.name} is DEFENDING against overtake!</color>");
+            // Defense log removed - too frequent
         }
     }
 
@@ -869,7 +984,7 @@ public class AIVehicleController : MonoBehaviour
     public void ForceOvertake(AIVehicleController target)
     {
         if (target == null || isOvertaking || carToOvertake == target) return;
-        Debug.Log($"[AI] {gameObject.name} is FORCED to overtake {target.gameObject.name} by manager.");
+        // Force overtake log removed - manager commands are frequent
         isOvertaking = true;
         carToOvertake = target;
         timeStuck = 0f;
@@ -892,7 +1007,7 @@ public class AIVehicleController : MonoBehaviour
         }
     }
 
-    // --- NEW: Dynamic Threat Field Avoidance System ---
+    // --- NEW: Dynamic Threat Field Avoidance System (Improved) ---
     private float CalculateDynamicAvoidanceOffset()
     {
         float totalOffset = 0f;
@@ -920,10 +1035,25 @@ public class AIVehicleController : MonoBehaviour
             float aggressionFactor = Mathf.Lerp(1.2f, 0.7f, aggressiveness);
             threat *= aggressionFactor;
 
-            // Lateral offset: steer away from the other car's local X position
+            // IMPROVED: Reduce avoidance strength to prevent sudden turns
             Vector3 localToOther = transform.InverseTransformPoint(other.transform.position);
             float side = Mathf.Sign(localToOther.x);
-            float offset = side * Mathf.Lerp(1.5f, 3.0f, threat); // more threat = bigger offset
+            
+            // Reduced offset range and made it more gradual
+            float baseOffset = Mathf.Lerp(0.8f, 2.0f, threat); // Reduced from 1.5f-3.0f
+            
+            // Apply distance-based reduction - closer cars get more avoidance
+            float distanceFactor = Mathf.InverseLerp(avoidanceDetectionRadius, 2f, distance);
+            baseOffset *= distanceFactor;
+            
+            // Reduce avoidance when in corners to prevent track departure
+            float cornerFactor = DetectUpcomingCorners();
+            if (cornerFactor > 0.3f)
+            {
+                baseOffset *= Mathf.Lerp(1f, 0.4f, cornerFactor); // Reduce avoidance in corners
+            }
+            
+            float offset = side * baseOffset;
             totalOffset += offset * threat;
             totalThreat += threat;
 
@@ -938,18 +1068,18 @@ public class AIVehicleController : MonoBehaviour
         // Average the offset by total threat
         float avoidanceOffset = (totalThreat > 0f) ? totalOffset / totalThreat : 0f;
 
-        // If overtaking, bias to the chosen overtake side
+        // If overtaking, bias to the chosen overtake side (but less aggressively)
         if (isOvertaking && carToOvertake != null)
         {
-            avoidanceOffset += Mathf.Sign(targetOvertakeOffset) * 1.0f;
+            avoidanceOffset += Mathf.Sign(targetOvertakeOffset) * 0.5f; // Reduced from 1.0f
         }
 
-        // Smooth the offset for stability
+        // Clamp avoidance offset to reasonable limits
         avoidanceOffset = Mathf.Clamp(avoidanceOffset, -3.5f, 3.5f);
         return avoidanceOffset;
     }
-
-    private float GetLookaheadCornerFactor(float multiplier)
+    
+    public float GetLookaheadCornerFactor(float multiplier)
     {
         if (racingLine == null || racingLine.Points.Count == 0) return 0f;
         int lookahead = Mathf.RoundToInt(lookaheadPoints * multiplier);
@@ -966,5 +1096,435 @@ public class AIVehicleController : MonoBehaviour
         float dot = Vector3.Dot(v1, v2);
         float curvature = 1f - (dot + 1f) / 2f;
         return Mathf.Clamp01(curvature);
+    }
+    
+    // Public methods for enhanced AI systems
+    public float GetCornerFactor()
+    {
+        return DetectUpcomingCorners();
+    }
+    
+    public float GetCurrentSteerInput() => currentSteer;
+    public float GetCurrentAccelerationInput() => currentAcceleration;
+    public float GetCurrentBrakeInput() => currentHandbrake > 0f ? currentHandbrake : currentBrake;
+    
+    // Behavior modification methods for personality system
+    public void ModifyBehavior(string behaviorType, float modifier)
+    {
+        switch (behaviorType.ToLower())
+        {
+            case "braking":
+                behaviorModifier_braking = modifier;
+                break;
+            case "steering":
+                behaviorModifier_steering = modifier;
+                break;
+            case "throttle":
+                behaviorModifier_throttle = modifier;
+                break;
+            case "aggression":
+                behaviorModifier_aggression = modifier;
+                aggressiveness = Mathf.Clamp01(aggressiveness + modifier);
+                break;
+            case "blocking":
+                behaviorModifier_blocking = modifier;
+                break;
+            case "speed":
+                behaviorModifier_speed = modifier;
+                maxSpeedMultiplier = Mathf.Clamp01(maxSpeedMultiplier + modifier);
+                break;
+            case "defense":
+                behaviorModifier_defense = modifier;
+                break;
+            case "pathrandomness":
+                behaviorModifier_pathRandomness = modifier;
+                pathRandomness = Mathf.Max(0f, pathRandomness + modifier);
+                break;
+        }
+    }
+    
+    public void ResetBehaviorModifiers()
+    {
+        behaviorModifier_braking = 0f;
+        behaviorModifier_steering = 0f;
+        behaviorModifier_throttle = 0f;
+        behaviorModifier_aggression = 0f;
+        behaviorModifier_blocking = 0f;
+        behaviorModifier_speed = 0f;
+        behaviorModifier_defense = 0f;
+        behaviorModifier_pathRandomness = 0f;
+        
+        // Reset smooth steering state when behavior is reset
+        if (smoothSteeringController != null)
+        {
+            smoothSteeringController.ResetSmoothingState();
+        }
+        
+        // Reset modified values to original
+        // Note: This would need to store original values
+    }
+    
+    // === STRATEGIC NITRO SYSTEM METHODS ===
+    
+    private void DetermineInitialNitroStrategy()
+    {
+        if (personalityManager?.GetPersonality() == null) return;
+        
+        var personality = personalityManager.GetPersonality();
+        
+        if (personality.nitroAggression > 0.7f)
+            currentNitroStrategy = NitroStrategy.Aggressive;
+        else if (personality.nitroDefense > 0.7f)
+            currentNitroStrategy = NitroStrategy.Defensive;
+        else if (personality.nitroConservation > 0.7f)
+            currentNitroStrategy = NitroStrategy.Conservative;
+        else
+            currentNitroStrategy = NitroStrategy.Opportunistic;
+    }
+    
+    private void UpdateNitroRaceContext()
+    {
+        // Use shared race context manager for efficient context updates
+        if (RaceContextManager.Instance != null)
+        {
+            var context = RaceContextManager.Instance.GetRaceContext(this);
+            currentPosition = context.position;
+            totalRacers = context.totalRacers;
+            isBeingPressured = context.isBeingPressured;
+            hasOpportunityAhead = context.hasOpportunityAhead;
+        }
+        else
+        {
+            // Fallback to direct calculations
+            var raceManager = FindFirstObjectByType<AIRaceManager>();
+            if (raceManager != null)
+            {
+                currentPosition = GetCurrentNitroPosition(raceManager);
+                totalRacers = raceManager.SortedRacers.Count + 1;
+            }
+            
+            isBeingPressured = IsBeingPressuredFromBehind();
+            hasOpportunityAhead = HasOvertakingOpportunity();
+        }
+    }
+    
+    private void UpdateNitroStrategy()
+    {
+        if (personalityManager?.GetPersonality() == null) return;
+        
+        var personality = personalityManager.GetPersonality();
+        
+        // Adapt strategy based on race situation
+        if (currentPosition > totalRacers * 0.7f && RaceProgress > 0.5f)
+        {
+            // Far behind in late race - go desperate
+            currentNitroStrategy = NitroStrategy.Desperate;
+        }
+        else if (currentPosition <= 3 && isBeingPressured)
+        {
+            // Leading but under pressure - go defensive
+            currentNitroStrategy = NitroStrategy.Defensive;
+        }
+        else if (hasOpportunityAhead && personality.overtakingAggression > 0.6f)
+        {
+            // Opportunity to overtake - go aggressive
+            currentNitroStrategy = NitroStrategy.Aggressive;
+        }
+        else if (RaceProgress < 0.3f)
+        {
+            // Early race - be conservative
+            currentNitroStrategy = NitroStrategy.Conservative;
+        }
+        else
+        {
+            // Default to opportunistic
+            currentNitroStrategy = NitroStrategy.Opportunistic;
+        }
+    }
+    
+    private bool MakeStrategicNitroDecision()
+    {
+        if (!CanUseStrategicNitro()) return false;
+        
+        bool shouldUseNitro = false;
+        string reason = "";
+        
+        switch (currentNitroStrategy)
+        {
+            case NitroStrategy.Conservative:
+                shouldUseNitro = ShouldUseConservativeNitro(out reason);
+                break;
+                
+            case NitroStrategy.Aggressive:
+                shouldUseNitro = ShouldUseAggressiveNitro(out reason);
+                break;
+                
+            case NitroStrategy.Defensive:
+                shouldUseNitro = ShouldUseDefensiveNitro(out reason);
+                break;
+                
+            case NitroStrategy.Opportunistic:
+                shouldUseNitro = ShouldUseOpportunisticNitro(out reason);
+                break;
+                
+            case NitroStrategy.Desperate:
+                shouldUseNitro = ShouldUseDesperateNitro(out reason);
+                break;
+        }
+        
+        if (shouldUseNitro)
+        {
+            lastNitroUseTime = Time.time;
+            nitroSlowdownTimer = nitroSlowdownDuration;
+            isNitroSlowingDown = true;
+            // Nitro usage log removed - too frequent (every nitro use)
+        }
+        
+        return shouldUseNitro;
+    }
+    
+    private bool ShouldUseConservativeNitro(out string reason)
+    {
+        reason = "";
+        
+        // Only use nitro in key situations
+        if (RaceProgress > 0.8f && currentPosition > 3)
+        {
+            reason = "Final push for better position";
+            return Random.value < 0.6f;
+        }
+        
+        if (hasOpportunityAhead && IsOnStraight() && Random.value < 0.3f)
+        {
+            reason = "Clear overtaking opportunity on straight";
+            return true;
+        }
+        
+        return false;
+    }
+    
+    private bool ShouldUseAggressiveNitro(out string reason)
+    {
+        reason = "";
+        var personality = personalityManager?.GetPersonality();
+        
+        // Use nitro aggressively for overtaking
+        if (hasOpportunityAhead && IsOnStraight())
+        {
+            reason = "Aggressive overtaking attempt";
+            float aggressionBonus = personality?.nitroAggression ?? 0.5f;
+            return Random.value < (0.7f + aggressionBonus * 0.3f);
+        }
+        
+        // Use nitro to break away from pack
+        if (IsInTrafficPack() && IsOnStraight())
+        {
+            reason = "Breaking away from traffic pack";
+            return Random.value < 0.5f;
+        }
+        
+        // Use nitro when under pressure to maintain position
+        if (isBeingPressured && currentPosition <= 3)
+        {
+            reason = "Maintaining lead position under pressure";
+            return Random.value < 0.6f;
+        }
+        
+        return false;
+    }
+    
+    private bool ShouldUseDefensiveNitro(out string reason)
+    {
+        reason = "";
+        var personality = personalityManager?.GetPersonality();
+        
+        // Use nitro to defend position
+        if (isBeingPressured && IsOnStraight())
+        {
+            reason = "Defending position from pursuer";
+            float defenseBonus = personality?.nitroDefense ?? 0.5f;
+            return Random.value < (0.6f + defenseBonus * 0.4f);
+        }
+        
+        // Use nitro to prevent being overtaken
+        if (IsAboutToBeOvertaken())
+        {
+            reason = "Preventing imminent overtake";
+            return Random.value < 0.8f;
+        }
+        
+        return false;
+    }
+    
+    private bool ShouldUseOpportunisticNitro(out string reason)
+    {
+        reason = "";
+        
+        // Wait for perfect opportunities
+        if (hasOpportunityAhead && IsOnLongStraight() && !isBeingPressured)
+        {
+            reason = "Perfect opportunity on long straight";
+            return Random.value < 0.7f;
+        }
+        
+        // Use nitro when multiple cars are close for maximum effect
+        if (IsInTrafficPack() && IsOnStraight())
+        {
+            reason = "Opportunistic move in traffic pack";
+            return Random.value < 0.4f;
+        }
+        
+        return false;
+    }
+    
+    private bool ShouldUseDesperateNitro(out string reason)
+    {
+        reason = "";
+        
+        // Use nitro more frequently when desperate
+        if (IsOnStraight() && Random.value < 0.8f)
+        {
+            reason = "Desperate attempt to catch up";
+            return true;
+        }
+        
+        // Even use nitro in less ideal conditions
+        if (hasOpportunityAhead && Random.value < 0.9f)
+        {
+            reason = "Desperate overtaking attempt";
+            return true;
+        }
+        
+        return false;
+    }
+    
+    private bool CanUseStrategicNitro()
+    {
+        return vehicleController.currentNitro > 10f && 
+               !vehicleController.isNitroActive && 
+               !vehicleController.isNitroCooldown &&
+               Time.time - lastNitroUseTime > 1f; // Minimum 1 second between uses
+    }
+    
+    private bool IsOnStraight()
+    {
+        // Check if current track section is relatively straight
+        float cornerFactor = GetCornerFactor();
+        return cornerFactor < 0.2f;
+    }
+    
+    private bool IsOnLongStraight()
+    {
+        // Check for longer straight sections
+        float cornerFactor = GetCornerFactor();
+        float lookaheadCorner = GetLookaheadCornerFactor(2f);
+        return cornerFactor < 0.1f && lookaheadCorner < 0.1f;
+    }
+    
+    private bool IsBeingPressuredFromBehind()
+    {
+        // Check if cars behind are close and gaining
+        var nearbyVehicles = GetNearbyVehicles();
+        foreach (var vehicle in nearbyVehicles)
+        {
+            Vector3 relativePos = transform.InverseTransformPoint(vehicle.transform.position);
+            if (relativePos.z < 0 && Vector3.Distance(transform.position, vehicle.transform.position) < 15f)
+            {
+                // Car is behind and close
+                Rigidbody vehicleRb = vehicleController.GetComponent<Rigidbody>();
+                Rigidbody otherRb = vehicle.GetComponent<Rigidbody>();
+                if (vehicleRb != null && otherRb != null)
+                {
+                    Vector3 relativeVelocity = vehicleRb.linearVelocity - otherRb.linearVelocity;
+                    if (Vector3.Dot(relativeVelocity, transform.forward) < 0)
+                    {
+                        // Car behind is gaining
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    
+    private bool HasOvertakingOpportunity()
+    {
+        // Check if there are cars ahead that can be overtaken
+        var nearbyVehicles = GetNearbyVehicles();
+        foreach (var vehicle in nearbyVehicles)
+        {
+            Vector3 relativePos = transform.InverseTransformPoint(vehicle.transform.position);
+            if (relativePos.z > 0 && Vector3.Distance(transform.position, vehicle.transform.position) < 25f)
+            {
+                // Car is ahead and within overtaking range
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    private bool IsAboutToBeOvertaken()
+    {
+        var nearbyVehicles = GetNearbyVehicles();
+        foreach (var vehicle in nearbyVehicles)
+        {
+            Vector3 relativePos = transform.InverseTransformPoint(vehicle.transform.position);
+            if (relativePos.z < 0 && Vector3.Distance(transform.position, vehicle.transform.position) < 8f)
+            {
+                // Car is very close behind
+                Rigidbody vehicleRb = vehicleController.GetComponent<Rigidbody>();
+                Rigidbody otherRb = vehicle.GetComponent<Rigidbody>();
+                if (vehicleRb != null && otherRb != null)
+                {
+                    Vector3 relativeVelocity = vehicleRb.linearVelocity - otherRb.linearVelocity;
+                    if (Vector3.Dot(relativeVelocity, transform.forward) < -2f)
+                    {
+                        // Car behind is gaining fast
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    
+    private bool IsInTrafficPack()
+    {
+        // Check if surrounded by multiple cars
+        var nearbyVehicles = GetNearbyVehicles();
+        int carsNearby = 0;
+        foreach (var vehicle in nearbyVehicles)
+        {
+            if (Vector3.Distance(transform.position, vehicle.transform.position) < 20f)
+            {
+                carsNearby++;
+            }
+        }
+        return carsNearby >= 2;
+    }
+    
+    private int GetCurrentNitroPosition(AIRaceManager raceManager)
+    {
+        if (raceManager.SortedRacers.Contains(this))
+        {
+            return raceManager.SortedRacers.IndexOf(this) + 1;
+        }
+        return 1;
+    }
+    
+    private List<AIVehicleController> GetNearbyVehicles()
+    {
+        var nearby = new List<AIVehicleController>();
+        if (otherVehicles != null)
+        {
+            foreach (var vehicle in otherVehicles)
+            {
+                if (vehicle != null && vehicle != this)
+                {
+                    nearby.Add(vehicle);
+                }
+            }
+        }
+        return nearby;
     }
 }

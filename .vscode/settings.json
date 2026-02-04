@@ -56,5 +56,8 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "RetroRacer.sln"
+    "dotnet.defaultSolution": "RetroRacer.sln",
+    "dotrush.roslyn.projectOrSolutionFiles": [
+        "c:\\Game Dev Files\\RetroRacer\\RetroRacer.sln"
+    ]
 }
