@@ -19,9 +19,6 @@ public class SmoothSteeringController : MonoBehaviour
     [SerializeField] private float maxBehaviorSteeringModifier = 0.3f; // Limit behavior steering changes
     [SerializeField] private float behaviorModifierSmoothingRate = 1.5f;
     
-    [Header("Debug")]
-    [SerializeField] private bool showDebugInfo = false;
-    
     // Internal state
     private float lastSteeringInput = 0f;
     private float lastLateralOffset = 0f;

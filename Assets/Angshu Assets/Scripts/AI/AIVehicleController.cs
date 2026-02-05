@@ -126,10 +126,6 @@ public class AIVehicleController : MonoBehaviour
     // Handbrake parameters (randomized per car)
     private float handbrakeStrength;
     private float handbrakeThresholdRandomized;
-    
-    [SerializeField]
-    private bool isDrifty = false;
-    
     // Strategic Nitro system (consolidated from SmartNitroSystem)
     private float nitroDecisionCooldown = 0f;
     private float lastNitroUseTime = 0f;

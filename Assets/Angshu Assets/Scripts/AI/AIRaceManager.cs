@@ -2,7 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using Track;
-using System.Linq;
 using Ashsvp;
 
 public class AIRaceManager : MonoBehaviour
@@ -46,9 +45,9 @@ public class AIRaceManager : MonoBehaviour
     private bool raceIsActive = false;
     
     // Position tracking
-    public List<AIVehicleController> SortedRacers { get; private set; } = new List<AIVehicleController>();
-    public Dictionary<AIVehicleController, int> CarPositions { get; private set; } = new Dictionary<AIVehicleController, int>();
-    private Dictionary<AIVehicleController, float> overtakeCooldowns = new Dictionary<AIVehicleController, float>();
+    public List<AIVehicleController> SortedRacers { get; private set; } = new();
+    public Dictionary<AIVehicleController, int> CarPositions { get; private set; } = new();
+    private readonly Dictionary<AIVehicleController, float> overtakeCooldowns = new();
     
     // Race state for all cars (AI + player)
     private class RaceCarState {
@@ -60,11 +59,17 @@ public class AIRaceManager : MonoBehaviour
         public int position = 0;
         public AIVehicleController aiController; // Reference to AI controller if it's an AI car
     }
-    private List<RaceCarState> raceCars = new List<RaceCarState>();
+    private readonly List<RaceCarState> raceCars = new();
     private RaceCarState playerState = null;
     private bool raceFinished = false;
     private float raceStartTime = 0f;
     private int totalCheckpoints = 0;
+    
+    // Cached WaitForSeconds instances for performance
+    private readonly WaitForSeconds waitTwoSeconds = new(2f);
+    private readonly WaitForSeconds waitHalfSecond = new(0.5f);
+    private readonly WaitForSeconds waitOneSecond = new(1f);
+    private readonly WaitForSeconds waitTenSeconds = new(10f);
     
     private void Start()
     {
@@ -141,7 +146,7 @@ public class AIRaceManager : MonoBehaviour
     private IEnumerator SpawnAIRacersWhenReady()
     {
         // Wait for track generation to complete
-        yield return new WaitForSeconds(2f); // Give time for track generation to complete
+        yield return waitTwoSeconds; // Give time for track generation to complete
         
         // Make sure racing line is generated
         if (trackGenerator.RacingLine == null || trackGenerator.RacingLine.Points.Count == 0)
@@ -209,10 +214,8 @@ public class AIRaceManager : MonoBehaviour
         startDirection.y = 0;
         startDirection.Normalize();
         
-        // Find ground level at the start position
-        Vector3 groundPosition = FindGroundPosition(startPosition);
-        
-        SpawnCarsAtPosition(groundPosition, startDirection);
+        // Find ground level at the start position and spawn cars
+        SpawnCarsAtPosition(FindGroundPosition(startPosition), startDirection);
     }
     
     private Vector3 FindGroundPosition(Vector3 startPosition)
@@ -255,8 +258,8 @@ public class AIRaceManager : MonoBehaviour
             Vector3 position = startPosition + rowOffset + colOffset;
             position.y += 0.5f;
             Quaternion rotation = Quaternion.LookRotation(startDirection);
-            GameObject carObj = null;
-            bool isPlayer = (spawnPlayer && playerVehiclePrefab != null && i == playerGridPosition);
+            GameObject carObj;
+            bool isPlayer = (spawnPlayer && null != playerVehiclePrefab && i == playerGridPosition);
             if (isPlayer)
             {
                 carObj = Instantiate(playerVehiclePrefab, position, rotation);
@@ -276,21 +279,13 @@ public class AIRaceManager : MonoBehaviour
                     
                     // Try to find the Body child object
                     Transform body = carObj.transform.Find("Body");
-                    if (body != null)
-                    {
-                        Renderer rend = body.GetComponent<Renderer>();
-                        if (rend != null)
+                    if (body != null && body.TryGetComponent<Renderer>(out var bodyRenderer))
                         {
                             Material mat = aiCarMaterials[aiIndex % aiCarMaterials.Count];
-                            rend.material = mat;
+                            bodyRenderer.material = mat;
                             materialApplied = true;
                             // Material assignment log removed - setup spam
                         }
-                        else
-                        {
-                            Debug.LogWarning($"[AIRaceManager] Body object found but no Renderer component on {carObj.name}");
-                        }
-                    }
                     else
                     {
                         // If Body not found, try to find any child with a Renderer
@@ -332,8 +327,7 @@ public class AIRaceManager : MonoBehaviour
                 }
                 
                 // Ensure AIVehicleController is present
-                var aiController = carObj.GetComponent<AIVehicleController>();
-                if (aiController == null)
+                if (!carObj.TryGetComponent<AIVehicleController>(out var aiController))
                 {
                     aiController = carObj.AddComponent<AIVehicleController>();
                 }
@@ -345,16 +339,14 @@ public class AIRaceManager : MonoBehaviour
             if (isPlayer) playerState = state;
             
             // Add RobustRespawnSystem component to handle fall/checkpoint detection
-            var respawnSystem = carObj.GetComponent<RobustRespawnSystem>();
-            if (respawnSystem == null)
+            if (!carObj.TryGetComponent<RobustRespawnSystem>(out var respawnSystem))
             {
                 respawnSystem = carObj.AddComponent<RobustRespawnSystem>();
                 ConfigureRespawnSystem(respawnSystem);
             }
             
             // Configure AI controller if present
-            var aiControllerConfig = carObj.GetComponent<AIVehicleController>();
-            if (aiControllerConfig != null && !isPlayer)
+            if (carObj.TryGetComponent<AIVehicleController>(out var aiControllerConfig) && !isPlayer)
             {
                 aiControllerConfig.trackGenerator = trackGenerator;
                 SetRandomDifficulty(aiControllerConfig, aiIndex-1);
@@ -372,7 +364,7 @@ public class AIRaceManager : MonoBehaviour
     
     private IEnumerator UpdateAICarListsAfterDelay()
     {
-        yield return new WaitForSeconds(0.5f); // Wait for all cars to be fully initialized
+        yield return waitHalfSecond; // Wait for all cars to be fully initialized
         
         // Get all AI cars and update their otherVehicles list
         foreach (var aiCar in aiRacers)
@@ -417,7 +409,7 @@ public class AIRaceManager : MonoBehaviour
         while (true)
         {
             UpdateRacePositions();
-            yield return new WaitForSeconds(1f);
+            yield return waitOneSecond;
         }
     }
 
@@ -472,7 +464,7 @@ public class AIRaceManager : MonoBehaviour
         while (true)
         {
             // Wait for a short interval before recalculating.
-            yield return new WaitForSeconds(1.0f); 
+            yield return waitOneSecond; 
 
             if (aiRacers.Count < 1) continue;
 
@@ -551,7 +543,7 @@ public class AIRaceManager : MonoBehaviour
     {
         while (true)
         {
-            yield return new WaitForSeconds(10f);
+            yield return waitTenSeconds;
             if (!raceIsActive) continue;
             if (SortedRacers.Count < 2) continue;
             
@@ -675,8 +667,7 @@ public class AIRaceManager : MonoBehaviour
         if (state == null || state.finished) return;
         
         // Get or add the robust respawn system
-        RobustRespawnSystem respawnSystem = car.GetComponent<RobustRespawnSystem>();
-        if (respawnSystem == null)
+        if (!car.TryGetComponent<RobustRespawnSystem>(out var respawnSystem))
         {
             respawnSystem = car.AddComponent<RobustRespawnSystem>();
             ConfigureRespawnSystem(respawnSystem);
@@ -791,8 +782,7 @@ public class AIRaceManager : MonoBehaviour
     private void StopCar(GameObject car)
     {
         // Stop AI cars
-        var aiController = car.GetComponent<AIVehicleController>();
-        if (aiController != null)
+        if (car.TryGetComponent<AIVehicleController>(out var aiController))
         {
             aiController.StopCar();
         }
@@ -1030,24 +1020,15 @@ public class AIRaceManager : MonoBehaviour
         // Use reflection to set private fields since they're not exposed as public properties
         var respawnHeightField = typeof(RobustRespawnSystem).GetField("respawnHeight", 
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (respawnHeightField != null)
-        {
-            respawnHeightField.SetValue(respawnSystem, respawnHeight);
-        }
+        respawnHeightField?.SetValue(respawnSystem, respawnHeight);
         
         var respawnOffsetField = typeof(RobustRespawnSystem).GetField("respawnForwardOffset", 
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (respawnOffsetField != null)
-        {
-            respawnOffsetField.SetValue(respawnSystem, respawnForwardOffset);
-        }
+        respawnOffsetField?.SetValue(respawnSystem, respawnForwardOffset);
         
         var invulnerabilityField = typeof(RobustRespawnSystem).GetField("respawnInvulnerabilityTime", 
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (invulnerabilityField != null)
-        {
-            invulnerabilityField.SetValue(respawnSystem, respawnInvulnerabilityTime);
-        }
+        invulnerabilityField?.SetValue(respawnSystem, respawnInvulnerabilityTime);
     }
     
     [ContextMenu("Test Player Respawn")]
