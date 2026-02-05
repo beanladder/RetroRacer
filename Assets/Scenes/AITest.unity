@@ -206,8 +206,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 262375647}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.07682797, y: 0.00000038247003, z: -0.000000029471504, w: 0.9970444}
-  m_LocalPosition: {x: -3e-44, y: 3.8618283, z: -6.8878493}
+  m_LocalRotation: {x: 0.07686302, y: -0.00003615068, z: 0.0000027868953, w: 0.9970417}
+  m_LocalPosition: {x: 1347.2767, y: 16.23, z: -1178.0862}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -389,34 +389,28 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   trackGenerator: {fileID: 379555216}
   aiVehiclePrefabs:
-  - {fileID: 321616085496138627, guid: 3de01424804a7cf41bbc5266ad066d86, type: 3}
-  - {fileID: 5505070333310861898, guid: 68882d0ce68ab9e4da349189fe83d3e0, type: 3}
-  - {fileID: 5133139713709978575, guid: 045ea7d5027d0b8468164902ce8cf621, type: 3}
+  - {fileID: 1442448109624292080, guid: c45ed9ba711d56e4aaf1b4ee416a2596, type: 3}
   - {fileID: 5732929322218367154, guid: 57d987d5ad4d1e1418480394f89b0e87, type: 3}
+  - {fileID: 5505070333310861898, guid: 68882d0ce68ab9e4da349189fe83d3e0, type: 3}
   numberOfAIRacers: 3
-  startingOffset: 12
-  minSkillLevel: 0.4
-  maxSkillLevel: 0.85
-  minAggressiveness: 0.4
-  maxAggressiveness: 0.9
-  rubberBandingStrength: 0.7
-  maxSpeedBoost: 1.25
-  maxSpeedPenalty: 0.85
+  startingOffset: 10
+  minSkillLevel: 0.6
+  maxSkillLevel: 0.95
+  minAggressiveness: 0.6
+  maxAggressiveness: 1
+  rubberBandingStrength: 0.3
+  maxSpeedBoost: 1.1
+  maxSpeedPenalty: 0.95
   numberOfLaps: 3
-  playerVehiclePrefab: {fileID: 321616085496138627, guid: 3de01424804a7cf41bbc5266ad066d86, type: 3}
+  playerVehiclePrefab: {fileID: 5133139713709978575, guid: 045ea7d5027d0b8468164902ce8cf621, type: 3}
   spawnPlayer: 1
   playerTag: Player
   autoSetupAllVehicles: 1
   setupPlayerVehicles: 1
-  respawnHeight: 2.5
-  respawnForwardOffset: 6
-  respawnInvulnerabilityTime: 2.5
-  aiCarMaterials:
-  - {fileID: 2100000, guid: 09dd114a7c81d4bee96d18ec88d96f72, type: 2}
-  - {fileID: 2100000, guid: e8f5d5e75da404455a2997caaf2ad4ca, type: 2}
-  - {fileID: 2100000, guid: 9c1af373962c54b5cbc3a3dc14d50e07, type: 2}
-  - {fileID: 2100000, guid: ae61104120c2045b994805192c783a33, type: 2}
-  - {fileID: 2100000, guid: 63efe746354bd49259554e05db302c12, type: 2}
+  respawnHeight: 2
+  respawnForwardOffset: 4
+  respawnInvulnerabilityTime: 1.5
+  aiCarMaterials: []
 --- !u!4 &1054934332
 Transform:
   m_ObjectHideFlags: 0
