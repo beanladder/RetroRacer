@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4c5df199202c0441801945eafc1cd8e, type: 3}
+  m_Name: Opportunist_Personality
+  m_EditorClassIdentifier: Assembly-CSharp::AIPersonalityData
+  personalityType: 2
+  aggression: 0.53289884
+  skill: 0.7464354
+  consistency: 0.6332864
+  riskTaking: 0.4357713
+  patience: 0.76678777
+  nitroAggression: 0.56347865
+  nitroDefense: 0.3
+  nitroConservation: 0.4
+  blockingTendency: 0.3
+  overtakingAggression: 0.70319206
+  defensiveDriving: 0.4
+  pressureResistance: 0.6
+  comebackDrive: 0.8123284

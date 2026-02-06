@@ -70,7 +70,7 @@ public class RaceContextManager : MonoBehaviour
     /// <summary>
     /// Calculate pressure level for a specific AI car based on race situation
     /// </summary>
-    public float CalculatePressureLevel(AIVehicleController aiCar, AIPersonalityManager.AIPersonality personality, bool isInRivalry, float rivalryIntensity, int mistakeCount)
+    public float CalculatePressureLevel(AIVehicleController aiCar, AIPersonalityData personality, bool isInRivalry, float rivalryIntensity)
     {
         // Safety checks
         if (aiCar == null || personality == null) return 0f;
@@ -102,11 +102,7 @@ public class RaceContextManager : MonoBehaviour
             pressure += 0.3f * rivalryIntensity;
         }
         
-        // Mistake history pressure
-        if (mistakeCount > 2)
-        {
-            pressure += 0.2f;
-        }
+
         
         // Personality affects pressure resistance
         if (personality != null)

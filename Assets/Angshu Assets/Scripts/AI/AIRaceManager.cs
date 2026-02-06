@@ -4,6 +4,23 @@ using UnityEngine;
 using Track;
 using Ashsvp;
 
+/// <summary>
+/// Manages AI racers in the race, including spawning, positioning, and personality assignment.
+/// 
+/// PERSONALITY SYSTEM USAGE:
+/// 1. Create personality presets: Tools > AI > Create Personality Presets
+/// 2. Add personalities to the "Ai Personalities" list in the Inspector
+/// 3. Choose "Randomize Personality Assignment" for variety, or uncheck for ordered assignment
+/// 4. If no personalities are assigned, AI will generate random personalities automatically
+/// 
+/// PERSONALITY ASSIGNMENT:
+/// - Random: Each AI gets a random personality from the list
+/// - Ordered: AI cars get personalities in order (cycling through the list)
+/// - Empty list: AI generates random personalities (old behavior)
+/// 
+/// NOTE: AI difficulty (skill, aggressiveness) is now controlled entirely by personalities.
+/// The race manager only handles spawning, rubber banding, and race logistics.
+/// </summary>
 public class AIRaceManager : MonoBehaviour
 {
     [Header("AI Racers Configuration")]
@@ -12,11 +29,12 @@ public class AIRaceManager : MonoBehaviour
     [SerializeField, Range(1, 10)] private int numberOfAIRacers = 3;
     [SerializeField] private float startingOffset = 15f;
     
-    [Header("AI Difficulty Settings")]
-    [SerializeField, Range(0f, 1f)] private float minSkillLevel = 0.5f;
-    [SerializeField, Range(0f, 1f)] private float maxSkillLevel = 0.9f;
-    [SerializeField, Range(0f, 1f)] private float minAggressiveness = 0.3f;
-    [SerializeField, Range(0f, 1f)] private float maxAggressiveness = 0.8f;
+    [Header("AI Personality Configuration")]
+    [SerializeField, Tooltip("List of personality ScriptableObjects to assign to AI racers. If empty, personalities will be randomized.")]
+    private List<AIPersonalityData> aiPersonalities = new List<AIPersonalityData>();
+    
+    [SerializeField, Tooltip("If true, personalities will be assigned randomly from the list. If false, they'll be assigned in order.")]
+    private bool randomizePersonalityAssignment = true;
     
     [Header("Rubber Banding")]
     [SerializeField, Range(0f, 1f), Tooltip("How strongly the rubber banding effect pulls cars together.")]
@@ -38,6 +56,10 @@ public class AIRaceManager : MonoBehaviour
     [SerializeField] private float respawnHeight = 2f;
     [SerializeField] private float respawnForwardOffset = 5f;
     [SerializeField] private float respawnInvulnerabilityTime = 2f;
+    
+    [Header("Debug Visualization")]
+    [SerializeField, Tooltip("Show AI behavior states above cars (developer only)")]
+    private bool showAIBehaviorVisualization = true;
     [Header("AI Car Appearance")]
     [SerializeField] private List<Material> aiCarMaterials = new List<Material>();
     
@@ -349,11 +371,21 @@ public class AIRaceManager : MonoBehaviour
             if (carObj.TryGetComponent<AIVehicleController>(out var aiControllerConfig) && !isPlayer)
             {
                 aiControllerConfig.trackGenerator = trackGenerator;
-                SetRandomDifficulty(aiControllerConfig, aiIndex-1);
                 aiControllerConfig.IsRacing = false;
-                aiControllerConfig.isMischiefCar = (Random.value < 0.4f);
                 aiRacers.Add(aiControllerConfig);
                 state.aiController = aiControllerConfig; // Store reference to AI controller
+                
+                // Assign personality - this will control all AI difficulty/behavior
+                AssignPersonalityToAI(carObj, aiIndex-1);
+                
+                // Add behavior visualizer for debugging
+                if (showAIBehaviorVisualization)
+                {
+                    if (!carObj.TryGetComponent<AIBehaviorVisualizer>(out _))
+                    {
+                        carObj.AddComponent<AIBehaviorVisualizer>();
+                    }
+                }
             }
             carIndex++;
         }
@@ -594,30 +626,38 @@ public class AIRaceManager : MonoBehaviour
             }
         }
     }
-    
-    private void SetRandomDifficulty(AIVehicleController aiController, int racerIndex)
+    /// <summary>
+    /// Assign a personality to an AI car from the configured list
+    /// </summary>
+    private void AssignPersonalityToAI(GameObject aiCar, int aiIndex)
     {
-        // Access the serialized fields using reflection
-        var skillField = aiController.GetType().GetField("skillLevel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        var aggressivenessField = aiController.GetType().GetField("aggressiveness", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        
-        if (skillField != null && aggressivenessField != null)
+        // Get or add personality manager
+        if (!aiCar.TryGetComponent<AIPersonalityManager>(out var personalityManager))
         {
-            // Calculate skill level - lead cars are generally more skilled
-            float normalizedIndex = (float)racerIndex / Mathf.Max(1, numberOfAIRacers - 1);
-            float skillLevel = Mathf.Lerp(maxSkillLevel, minSkillLevel, normalizedIndex);
-            
-            // Add some randomness
-            skillLevel += Random.Range(-0.1f, 0.1f);
-            skillLevel = Mathf.Clamp(skillLevel, minSkillLevel, maxSkillLevel);
-            
-            // Calculate aggressiveness - random for each car
-            float aggressiveness = Random.Range(minAggressiveness, maxAggressiveness);
-            
-            // Set values
-            skillField.SetValue(aiController, skillLevel);
-            aggressivenessField.SetValue(aiController, aggressiveness);
+            personalityManager = aiCar.AddComponent<AIPersonalityManager>();
         }
+        
+        // If we have personalities configured, assign one
+        if (aiPersonalities != null && aiPersonalities.Count > 0)
+        {
+            AIPersonalityData personalityToAssign;
+            
+            if (randomizePersonalityAssignment)
+            {
+                // Pick a random personality from the list
+                personalityToAssign = aiPersonalities[Random.Range(0, aiPersonalities.Count)];
+            }
+            else
+            {
+                // Assign personalities in order, cycling through the list
+                personalityToAssign = aiPersonalities[aiIndex % aiPersonalities.Count];
+            }
+            
+            // Assign the personality
+            personalityManager.AssignPersonality(personalityToAssign);
+            Debug.Log($"[AIRaceManager] Assigned {personalityToAssign.personalityType} personality to {aiCar.name}");
+        }
+        // If no personalities configured, AIPersonalityManager will randomize one in its Start method
     }
     
     // Method to reset race (can be called from other scripts)

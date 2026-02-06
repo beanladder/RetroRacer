@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4c5df199202c0441801945eafc1cd8e, type: 3}
+  m_Name: Hothead_Personality
+  m_EditorClassIdentifier: Assembly-CSharp::AIPersonalityData
+  personalityType: 3
+  aggression: 0.9174573
+  skill: 0.6058135
+  consistency: 0.37340653
+  riskTaking: 0.9159283
+  patience: 0.051956665
+  nitroAggression: 0.96336174
+  nitroDefense: 0.3
+  nitroConservation: 0.4
+  blockingTendency: 0.91575885
+  overtakingAggression: 0.5
+  defensiveDriving: 0.4
+  pressureResistance: 0.12779172
+  comebackDrive: 0.5

@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4c5df199202c0441801945eafc1cd8e, type: 3}
+  m_Name: Speedster_Personality
+  m_EditorClassIdentifier: Assembly-CSharp::AIPersonalityData
+  personalityType: 7
+  aggression: 0.70759034
+  skill: 0.7251555
+  consistency: 0.77653515
+  riskTaking: 0.62226516
+  patience: 0.3068145
+  nitroAggression: 0.73884666
+  nitroDefense: 0.3
+  nitroConservation: 0.4
+  blockingTendency: 0.209443
+  overtakingAggression: 0.8111412
+  defensiveDriving: 0.4
+  pressureResistance: 0.6
+  comebackDrive: 0.5

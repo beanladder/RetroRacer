@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a4c5df199202c0441801945eafc1cd8e, type: 3}
+  m_Name: Veteran_Personality
+  m_EditorClassIdentifier: Assembly-CSharp::AIPersonalityData
+  personalityType: 4
+  aggression: 0.46419767
+  skill: 0.90911996
+  consistency: 0.88400126
+  riskTaking: 0.47655964
+  patience: 0.76916957
+  nitroAggression: 0.5
+  nitroDefense: 0.87293917
+  nitroConservation: 0.6333698
+  blockingTendency: 0.3
+  overtakingAggression: 0.5
+  defensiveDriving: 0.62017864
+  pressureResistance: 0.9161488
+  comebackDrive: 0.5

@@ -71,18 +71,26 @@ public class AIVehicleController : MonoBehaviour
     [SerializeField, Tooltip("Color used for visualizing the racing line path ahead")]
     private Color pathColor = Color.yellow;
     
+    [SerializeField, Tooltip("Show waypoint-based randomness visualization")]
+    private bool showRandomnessDebug = true;
+    
     [Header("Humanization")]
-    [SerializeField, Range(0f, 5f), Tooltip("How far (in meters) the AI can randomly deviate from the racing line.")]
-    private float pathRandomness = 3.5f;
+    [SerializeField, Range(0f, 2f), Tooltip("How far (in meters) the AI can randomly deviate from the racing line. Set to 0 to disable wiggling completely")]
+    private float pathRandomness = 0; // Reduced from 0.8 to minimize wiggling
 
-    [SerializeField, Range(0.1f, 5f), Tooltip("How quickly the AI's random path deviation changes over time.")]
-    private float randomnessChangeRate = 0.2f;
+    [SerializeField, Range(5, 50), Tooltip("How many waypoints before changing random offset. Higher = smoother, less wiggling")]
+    private int randomnessWaypointInterval = 20; // Increased from 15 for more stability
+    
+    // Waypoint-based randomness (prevents wiggling)
+    private float currentRandomOffset = 0f;
+    private float targetRandomOffset = 0f;
+    private int lastRandomnessWaypoint = 0;
      
     [Header("Overtaking")]
     [SerializeField, Tooltip("How long to be stuck behind a car before attempting to overtake.")]
     private float overtakeTriggerTime = 2.0f;
     [SerializeField, Tooltip("How far to the side to move when overtaking.")]
-    private float overtakeLaneOffset = 3.0f;
+    private float overtakeLaneOffset = 5.0f;
     [SerializeField, Tooltip("The maximum corner sharpness where an overtake is allowed.")]
     private float maxOvertakeCornerFactor = 0.2f;
     [SerializeField, Tooltip("Time to wait after completing an overtake before starting another.")]
@@ -171,11 +179,15 @@ public class AIVehicleController : MonoBehaviour
     private float behaviorModifier_defense = 0f;
     private float behaviorModifier_pathRandomness = 0f;
     
-    [Header("Mischief Car")]
-    public bool isMischiefCar = false;
+    [Header("Ramming System")]
+    [SerializeField] private bool enableRamming = true;
+    [SerializeField, Range(0f, 1f)] private float rammingAggressiveness = 0.5f;
+    [SerializeField] private float rammingCooldown = 3f;
+    [SerializeField] private float rammingDetectionRange = 12f;
     
-    private float mischiefRammingCooldown = 0f;
-    private float mischiefRammingInterval = 2.5f; // seconds between ramming attempts
+    private float rammingCooldownTimer = 0f;
+    private AIVehicleController rammingTarget = null;
+    private string rammingType = ""; // "side", "back", "front"
     
     private void Awake()
     {
@@ -387,12 +399,25 @@ public class AIVehicleController : MonoBehaviour
 
         // Apply behavior modifiers from personality system (smoothed)
         float effectivePathRandomness = pathRandomness + behaviorModifier_pathRandomness;
-        float randomOffset = (effectivePathRandomness > 0)
-            ? (Mathf.PerlinNoise(Time.time * randomnessChangeRate, perlinSeed) * 2f - 1f) * effectivePathRandomness
-            : 0f;
+        
+        // Waypoint-based randomness (prevents wiggling)
+        // Only update random offset when we pass certain waypoints
+        int waypointsSinceLastChange = Mathf.Abs(currentWaypointIndex - lastRandomnessWaypoint);
+        if (waypointsSinceLastChange >= randomnessWaypointInterval || lastRandomnessWaypoint == 0)
+        {
+            lastRandomnessWaypoint = currentWaypointIndex;
+            targetRandomOffset = Random.Range(-1f, 1f) * effectivePathRandomness;
+        }
+        
+        // Smoothly transition to target offset
+        currentRandomOffset = Mathf.Lerp(currentRandomOffset, targetRandomOffset, Time.deltaTime * 2f);
+        
+        // Adaptive path randomness: reduce on straight paths, maintain on curves
+        float straightFactor = 1f - Mathf.Clamp01(cornerFactor * 2f);
+        float adaptiveRandomOffset = currentRandomOffset * Mathf.Lerp(0.2f, 1.0f, straightFactor);
 
         // Smooth and limit the total lateral offset to prevent sudden path changes
-        float rawTotalLateralOffset = randomOffset + currentOvertakeOffset + committedAvoidanceOffset;
+        float rawTotalLateralOffset = adaptiveRandomOffset + currentOvertakeOffset + committedAvoidanceOffset;
         float totalLateralOffset = smoothSteeringController.SmoothLateralOffset(rawTotalLateralOffset);
 
         if (totalLateralOffset != 0)
@@ -640,6 +665,25 @@ public class AIVehicleController : MonoBehaviour
             int lookIdx = (currentWaypointIndex + longLookahead) % racingLine.Points.Count;
             Vector3 lookaheadPoint = trackGenerator.transform.TransformPoint(racingLine.Points[lookIdx]);
             Debug.DrawLine(transform.position + Vector3.up * 2f, lookaheadPoint + Vector3.up * 2f, Color.green);
+            
+            // Draw waypoint-based randomness
+            if (showRandomnessDebug)
+            {
+                // Show current random offset as a line from car
+                Vector3 offsetDirection = transform.right * currentRandomOffset;
+                Debug.DrawRay(transform.position + Vector3.up * 2.5f, offsetDirection, Color.cyan, 0f, false);
+                
+                // Show target random offset
+                Vector3 targetOffsetDirection = transform.right * targetRandomOffset;
+                Debug.DrawRay(transform.position + Vector3.up * 3f, targetOffsetDirection, Color.yellow, 0f, false);
+                
+                // Show last randomness waypoint
+                if (lastRandomnessWaypoint > 0 && lastRandomnessWaypoint < racingLine.Points.Count)
+                {
+                    Vector3 waypointPos = trackGenerator.transform.TransformPoint(racingLine.Points[lastRandomnessWaypoint]);
+                    Debug.DrawLine(transform.position, waypointPos, Color.magenta);
+                }
+            }
         }
 
         // Defensive driving timer
@@ -654,96 +698,39 @@ public class AIVehicleController : MonoBehaviour
             }
         }
 
-        // Mischief Car behavior (Improved - Less Aggressive)
-        if (isMischiefCar)
+        // Universal Ramming System (all cars can ram)
+        if (enableRamming && IsRacing)
         {
-            mischiefRammingCooldown -= Time.deltaTime;
-            if (mischiefRammingCooldown <= 0f)
+            rammingCooldownTimer -= Time.deltaTime;
+            
+            if (rammingCooldownTimer <= 0f)
             {
-                AIVehicleController target = null;
-                float closestDist = 999f;
-                string ramType = "";
+                // Find ramming opportunity
+                FindRammingTarget();
                 
-                // Try to find a car to side-ram (beside) - but less aggressively
-                foreach (var other in otherVehicles)
+                if (rammingTarget != null)
                 {
-                    if (other == null || !other.isActiveAndEnabled) continue;
-                    Vector3 toOther = other.transform.position - transform.position;
-                    float dist = toOther.magnitude;
-                    float sideDot = Vector3.Dot(transform.right, toOther.normalized);
-                    float forwardDot = Vector3.Dot(transform.forward, toOther.normalized);
-                    
-                    // Side-ram: car is within 8m and mostly to the side (reduced from 10m)
-                    if (Mathf.Abs(sideDot) > 0.7f && Mathf.Abs(forwardDot) < 0.5f && dist < 8f && dist < closestDist)
+                    // Check if we're in a corner - reduce ramming in sharp corners
+                    // Use existing cornerFactor variable from above
+                    if (cornerFactor > 0.4f)
                     {
-                        target = other;
-                        closestDist = dist;
-                        ramType = "side";
-                    }
-                }
-                
-                // If no side target, try to back-ram (in front) - but more conservatively
-                if (target == null)
-                {
-                    foreach (var other in otherVehicles)
-                    {
-                        if (other == null || !other.isActiveAndEnabled) continue;
-                        Vector3 toOther = other.transform.position - transform.position;
-                        float dist = toOther.magnitude;
-                        float forwardDot = Vector3.Dot(transform.forward, toOther.normalized);
-                        
-                        // Back-ram: car is within 12m and mostly in front (reduced from 15m)
-                        if (forwardDot > 0.7f && dist > 4f && dist < 12f && dist < closestDist)
-                        {
-                            target = other;
-                            closestDist = dist;
-                            ramType = "back";
-                        }
-                    }
-                }
-                
-                // If a target is found, apply mischief behavior (but smoothly)
-                if (target != null)
-                {
-                    // Check if we're in a corner - reduce mischief in corners to prevent track departure
-                    float mischiefCornerFactor = DetectUpcomingCorners();
-                    if (mischiefCornerFactor > 0.4f)
-                    {
-                        // Skip mischief in sharp corners
-                        mischiefRammingCooldown = mischiefRammingInterval * 0.5f; // Shorter cooldown
+                        // Skip ramming in sharp corners
+                        rammingCooldownTimer = rammingCooldown * 0.3f;
+                        rammingTarget = null;
                         return;
                     }
                     
-                    Vector3 toTarget = target.transform.position - transform.position;
-                    Vector3 localToTarget = transform.InverseTransformDirection(toTarget);
+                    // Execute ramming maneuver
+                    ExecuteRamming();
                     
-                    // Side-ram: steer toward the side (but smoothly)
-                    if (ramType == "side")
-                    {
-                        float steerDir = Mathf.Sign(localToTarget.x);
-                        float targetMischiefSteer = steerDir * maxSteeringAngle * 0.6f; // Reduced intensity
-                        
-                        // Apply smooth steering through the steering controller
-                        float smoothedMischiefSteer = smoothSteeringController.SmoothSteeringInput(targetMischiefSteer, false);
-                        currentSteer = Mathf.Lerp(currentSteer, smoothedMischiefSteer, Time.deltaTime * 3f); // Reduced from 5f
-                        
-                        // Mischief log removed - too frequent
-                    }
-                    // Back-ram: accelerate (but not as aggressively)
-                    else if (ramType == "back")
-                    {
-                        currentAcceleration = Mathf.Lerp(currentAcceleration, 1.1f, Time.deltaTime * 2f); // Reduced from 1.2f and 3f
-                        // Mischief log removed - too frequent
-                    }
-                    
-                    // Reduced random handbrake chaos
-                    if (Random.value < 0.1f) // Reduced from 0.2f
-                    {
-                        currentHandbrake = Mathf.Lerp(currentHandbrake, 0.3f, Time.deltaTime * 1.5f); // Reduced intensity
-                    }
+                    // Reset cooldown
+                    rammingCooldownTimer = rammingCooldown * Random.Range(0.8f, 1.2f);
                 }
-                
-                mischiefRammingCooldown = mischiefRammingInterval + Random.Range(-0.5f, 0.5f);
+                else
+                {
+                    // No target found, check again soon
+                    rammingCooldownTimer = rammingCooldown * 0.5f;
+                }
             }
         }
     }
@@ -1522,5 +1509,99 @@ public class AIVehicleController : MonoBehaviour
             }
         }
         return nearby;
+    }
+    
+    // === RAMMING SYSTEM METHODS ===
+    
+    private void FindRammingTarget()
+    {
+        rammingTarget = null;
+        float closestDist = 999f;
+        rammingType = "";
+        
+        foreach (var other in otherVehicles)
+        {
+            if (other == null || !other.isActiveAndEnabled) continue;
+            
+            Vector3 toOther = other.transform.position - transform.position;
+            float dist = toOther.magnitude;
+            
+            if (dist > rammingDetectionRange) continue;
+            
+            float sideDot = Vector3.Dot(transform.right, toOther.normalized);
+            float forwardDot = Vector3.Dot(transform.forward, toOther.normalized);
+            
+            // Priority 1: Side ramming (beside the car)
+            if (Mathf.Abs(sideDot) > 0.6f && Mathf.Abs(forwardDot) < 0.6f && dist < 10f && dist < closestDist)
+            {
+                rammingTarget = other;
+                closestDist = dist;
+                rammingType = "side";
+            }
+            // Priority 2: Back ramming (car ahead)
+            else if (rammingType != "side" && forwardDot > 0.6f && dist > 3f && dist < closestDist)
+            {
+                rammingTarget = other;
+                closestDist = dist;
+                rammingType = "back";
+            }
+            // Priority 3: Front ramming (car behind, defensive)
+            else if (rammingType == "" && forwardDot < -0.6f && dist < 8f && dist < closestDist)
+            {
+                rammingTarget = other;
+                closestDist = dist;
+                rammingType = "front";
+            }
+        }
+    }
+    
+    private void ExecuteRamming()
+    {
+        if (rammingTarget == null) return;
+        
+        Vector3 toTarget = rammingTarget.transform.position - transform.position;
+        Vector3 localToTarget = transform.InverseTransformDirection(toTarget);
+        
+        float intensity = rammingAggressiveness;
+        
+        // Apply personality modifiers
+        if (personalityManager != null && personalityManager.GetPersonality() != null)
+        {
+            var personality = personalityManager.GetPersonality();
+            intensity *= personality.aggression;
+        }
+        
+        switch (rammingType)
+        {
+            case "side":
+                // Steer toward the target
+                float steerDir = Mathf.Sign(localToTarget.x);
+                float targetRamSteer = steerDir * maxSteeringAngle * intensity;
+                currentSteer = Mathf.Lerp(currentSteer, targetRamSteer, Time.deltaTime * 4f);
+                
+                // Accelerate into the ram
+                currentAcceleration = Mathf.Lerp(currentAcceleration, 1f + intensity * 0.2f, Time.deltaTime * 3f);
+                break;
+                
+            case "back":
+                // Accelerate to catch up and ram from behind
+                currentAcceleration = Mathf.Lerp(currentAcceleration, 1f + intensity * 0.3f, Time.deltaTime * 3f);
+                
+                // Slight steering adjustment to aim at target
+                float backSteerDir = Mathf.Sign(localToTarget.x);
+                float backSteerAmount = backSteerDir * maxSteeringAngle * 0.3f * intensity;
+                currentSteer = Mathf.Lerp(currentSteer, backSteerAmount, Time.deltaTime * 2f);
+                break;
+                
+            case "front":
+                // Defensive ramming - brake and block
+                currentBrake = Mathf.Lerp(currentBrake, 0.5f * intensity, Time.deltaTime * 2f);
+                
+                // Weave to block
+                float frontSteerDir = Mathf.Sign(localToTarget.x);
+                float frontSteerAmount = frontSteerDir * maxSteeringAngle * 0.4f * intensity;
+                currentSteer = Mathf.Lerp(currentSteer, frontSteerAmount, Time.deltaTime * 3f);
+                break;
+        }
     }
 }

@@ -4,81 +4,17 @@ using System.Collections.Generic;
 
 public class AIPersonalityManager : MonoBehaviour
 {
-    // Merged AIPersonality data structure
-    [System.Serializable]
-    public class AIPersonality
-    {
-        [Header("Personality Type")]
-        public PersonalityType personalityType;
-        
-        [Header("Core Traits")]
-        [Range(0f, 1f)] public float aggression = 0.5f;
-        [Range(0f, 1f)] public float skill = 0.7f;
-        [Range(0f, 1f)] public float consistency = 0.6f;
-        [Range(0f, 1f)] public float riskTaking = 0.5f;
-        [Range(0f, 1f)] public float patience = 0.5f;
-        
-        [Header("Nitro Strategy")]
-        [Range(0f, 1f)] public float nitroAggression = 0.5f;
-        [Range(0f, 1f)] public float nitroDefense = 0.3f;
-        [Range(0f, 1f)] public float nitroConservation = 0.4f;
-        
-        [Header("Racing Behavior")]
-        [Range(0f, 1f)] public float blockingTendency = 0.3f;
-        [Range(0f, 1f)] public float overtakingAggression = 0.5f;
-        [Range(0f, 1f)] public float defensiveDriving = 0.4f;
-        [Range(0f, 1f)] public float mistakeProneness = 0.2f;
-        
-        [Header("Pressure Response")]
-        [Range(0f, 1f)] public float pressureResistance = 0.6f;
-        [Range(0f, 1f)] public float comebackDrive = 0.5f;
-
-        public enum PersonalityType
-        {
-            Aggressive,     // High aggression, low patience, risky
-            Conservative,   // Low aggression, high patience, safe
-            Opportunist,    // Medium aggression, waits for chances
-            Hothead,        // Very aggressive, makes mistakes under pressure
-            Veteran,        // High skill, consistent, strategic
-            Rookie,         // Low skill, inconsistent, learns during race
-            Blocker,        // Defensive, blocks other drivers
-            Speedster       // Focuses on pure speed, less tactical
-        }
-        
-        public string GetPersonalityDescription()
-        {
-            switch (personalityType)
-            {
-                case PersonalityType.Aggressive:
-                    return "Aggressive driver who takes risks and fights for position";
-                case PersonalityType.Conservative:
-                    return "Careful driver who avoids risks and drives consistently";
-                case PersonalityType.Opportunist:
-                    return "Strategic driver who waits for the right moment to strike";
-                case PersonalityType.Hothead:
-                    return "Hot-tempered driver prone to mistakes under pressure";
-                case PersonalityType.Veteran:
-                    return "Experienced driver with excellent racecraft and consistency";
-                case PersonalityType.Rookie:
-                    return "Inexperienced driver still learning the ropes";
-                case PersonalityType.Blocker:
-                    return "Defensive driver who excels at blocking opponents";
-                case PersonalityType.Speedster:
-                    return "Speed-focused driver who prioritizes pace over tactics";
-                default:
-                    return "Unknown personality type";
-            }
-        }
-    }
     [Header("Personality Configuration")]
-    [SerializeField] private AIPersonality personality;
-    [SerializeField] private bool randomizePersonality = true;
-    [SerializeField] private AIPersonality.PersonalityType forcedPersonalityType;
+    [SerializeField, Tooltip("Assign a personality ScriptableObject, or leave null to randomize")]
+    private AIPersonalityData personalityData;
     
-    [Header("Mistake System")]
-    [SerializeField] private float baseMistakeChance = 0.1f;
-    [SerializeField] private float pressureMistakeMultiplier = 2f;
-    [SerializeField] private float mistakeRecoveryTime = 2f;
+    [SerializeField, Tooltip("If true and no personality assigned, will generate a random personality")]
+    private bool randomizePersonality = true;
+    
+    [SerializeField, Tooltip("Force a specific personality type when randomizing")]
+    private AIPersonalityData.PersonalityType forcedPersonalityType;
+    
+
     
     [Header("Rivalry System")]
     [SerializeField] private List<AIPersonalityManager> rivals = new List<AIPersonalityManager>();
@@ -88,26 +24,7 @@ public class AIPersonalityManager : MonoBehaviour
     // Internal state
     private AIVehicleController aiController;
     private float currentPressure = 0f;
-    private float mistakeTimer = 0f;
-    private bool isMakingMistake = false;
-    private MistakeType currentMistake = MistakeType.None;
     private float rivalryTimer = 0f;
-    
-    // Mistake tracking
-    private int mistakeCount = 0;
-    private float lastMistakeTime = 0f;
-    
-    public enum MistakeType
-    {
-        None,
-        BrakingTooLate,
-        BrakingTooEarly,
-        MissedApex,
-        Oversteer,
-        Understeer,
-        ThrottleTooEarly,
-        WrongLine
-    }
     
     private void Start()
     {
@@ -120,13 +37,16 @@ public class AIPersonalityManager : MonoBehaviour
         }
         
         // Generate or assign personality
-        if (randomizePersonality)
+        if (personalityData == null)
         {
-            GenerateRandomPersonality();
-        }
-        else
-        {
-            personality = CreatePersonality(forcedPersonalityType);
+            if (randomizePersonality)
+            {
+                personalityData = GenerateRandomPersonality();
+            }
+            else
+            {
+                personalityData = AIPersonalityData.CreateRandomized(forcedPersonalityType);
+            }
         }
         
         // Apply personality to AI controller
@@ -135,18 +55,15 @@ public class AIPersonalityManager : MonoBehaviour
         // Delay rivalry setup to ensure all AI personalities are initialized
         StartCoroutine(SetupRivalriesDelayed());
         
-        Debug.Log($"[AIPersonality] {gameObject.name} personality: {personality.personalityType} - {personality.GetPersonalityDescription()}");
+        Debug.Log($"[AIPersonality] {gameObject.name} personality: {personalityData.personalityType} - {personalityData.GetPersonalityDescription()}");
     }
     
     private void Update()
     {
-        if (!aiController.IsRacing || personality == null) return;
+        if (!aiController.IsRacing || personalityData == null) return;
         
         // Update pressure level
         UpdatePressureLevel();
-        
-        // Handle mistakes
-        HandleMistakeSystem();
         
         // Handle rivalries
         HandleRivalrySystem();
@@ -155,149 +72,32 @@ public class AIPersonalityManager : MonoBehaviour
         ApplyPersonalityEffects();
     }
     
-    private void GenerateRandomPersonality()
+    private AIPersonalityData GenerateRandomPersonality()
     {
         // Weighted personality distribution for more interesting races
         float rand = Random.value;
-        AIPersonality.PersonalityType selectedType;
+        AIPersonalityData.PersonalityType selectedType;
         
-        if (rand < 0.15f) selectedType = AIPersonality.PersonalityType.Aggressive;
-        else if (rand < 0.25f) selectedType = AIPersonality.PersonalityType.Conservative;
-        else if (rand < 0.4f) selectedType = AIPersonality.PersonalityType.Opportunist;
-        else if (rand < 0.5f) selectedType = AIPersonality.PersonalityType.Hothead;
-        else if (rand < 0.65f) selectedType = AIPersonality.PersonalityType.Veteran;
-        else if (rand < 0.75f) selectedType = AIPersonality.PersonalityType.Rookie;
-        else if (rand < 0.85f) selectedType = AIPersonality.PersonalityType.Blocker;
-        else selectedType = AIPersonality.PersonalityType.Speedster;
+        if (rand < 0.15f) selectedType = AIPersonalityData.PersonalityType.Aggressive;
+        else if (rand < 0.25f) selectedType = AIPersonalityData.PersonalityType.Conservative;
+        else if (rand < 0.4f) selectedType = AIPersonalityData.PersonalityType.Opportunist;
+        else if (rand < 0.5f) selectedType = AIPersonalityData.PersonalityType.Hothead;
+        else if (rand < 0.65f) selectedType = AIPersonalityData.PersonalityType.Veteran;
+        else if (rand < 0.75f) selectedType = AIPersonalityData.PersonalityType.Rookie;
+        else if (rand < 0.85f) selectedType = AIPersonalityData.PersonalityType.Blocker;
+        else selectedType = AIPersonalityData.PersonalityType.Speedster;
         
-        personality = CreatePersonality(selectedType);
-    }
-    
-    // Merged personality creation factory method
-    private AIPersonality CreatePersonality(AIPersonality.PersonalityType type)
-    {
-        AIPersonality personality = new AIPersonality();
-        personality.personalityType = type;
-        
-        switch (type)
-        {
-            case AIPersonality.PersonalityType.Aggressive:
-                personality.aggression = Random.Range(0.8f, 1.0f);
-                personality.skill = Random.Range(0.6f, 0.8f);
-                personality.consistency = Random.Range(0.4f, 0.6f);
-                personality.riskTaking = Random.Range(0.8f, 1.0f);
-                personality.patience = Random.Range(0.1f, 0.3f);
-                personality.nitroAggression = Random.Range(0.8f, 1.0f);
-                personality.blockingTendency = Random.Range(0.6f, 0.8f);
-                personality.overtakingAggression = Random.Range(0.8f, 1.0f);
-                personality.mistakeProneness = Random.Range(0.3f, 0.5f);
-                personality.pressureResistance = Random.Range(0.4f, 0.6f);
-                break;
-                
-            case AIPersonality.PersonalityType.Conservative:
-                personality.aggression = Random.Range(0.2f, 0.4f);
-                personality.skill = Random.Range(0.7f, 0.9f);
-                personality.consistency = Random.Range(0.8f, 1.0f);
-                personality.riskTaking = Random.Range(0.1f, 0.3f);
-                personality.patience = Random.Range(0.7f, 0.9f);
-                personality.nitroConservation = Random.Range(0.7f, 0.9f);
-                personality.defensiveDriving = Random.Range(0.7f, 0.9f);
-                personality.mistakeProneness = Random.Range(0.1f, 0.2f);
-                personality.pressureResistance = Random.Range(0.7f, 0.9f);
-                break;
-                
-            case AIPersonality.PersonalityType.Opportunist:
-                personality.aggression = Random.Range(0.5f, 0.7f);
-                personality.skill = Random.Range(0.6f, 0.8f);
-                personality.consistency = Random.Range(0.6f, 0.8f);
-                personality.riskTaking = Random.Range(0.4f, 0.6f);
-                personality.patience = Random.Range(0.6f, 0.8f);
-                personality.nitroAggression = Random.Range(0.4f, 0.6f);
-                personality.overtakingAggression = Random.Range(0.6f, 0.8f);
-                personality.mistakeProneness = Random.Range(0.2f, 0.3f);
-                personality.comebackDrive = Random.Range(0.7f, 0.9f);
-                break;
-                
-            case AIPersonality.PersonalityType.Hothead:
-                personality.aggression = Random.Range(0.9f, 1.0f);
-                personality.skill = Random.Range(0.5f, 0.7f);
-                personality.consistency = Random.Range(0.2f, 0.4f);
-                personality.riskTaking = Random.Range(0.9f, 1.0f);
-                personality.patience = Random.Range(0.0f, 0.2f);
-                personality.nitroAggression = Random.Range(0.9f, 1.0f);
-                personality.blockingTendency = Random.Range(0.8f, 1.0f);
-                personality.mistakeProneness = Random.Range(0.5f, 0.8f);
-                personality.pressureResistance = Random.Range(0.1f, 0.3f);
-                break;
-                
-            case AIPersonality.PersonalityType.Veteran:
-                personality.aggression = Random.Range(0.4f, 0.6f);
-                personality.skill = Random.Range(0.8f, 1.0f);
-                personality.consistency = Random.Range(0.8f, 1.0f);
-                personality.riskTaking = Random.Range(0.3f, 0.5f);
-                personality.patience = Random.Range(0.7f, 0.9f);
-                personality.nitroConservation = Random.Range(0.6f, 0.8f);
-                personality.nitroDefense = Random.Range(0.7f, 0.9f);
-                personality.defensiveDriving = Random.Range(0.6f, 0.8f);
-                personality.mistakeProneness = Random.Range(0.0f, 0.1f);
-                personality.pressureResistance = Random.Range(0.8f, 1.0f);
-                break;
-                
-            case AIPersonality.PersonalityType.Rookie:
-                personality.aggression = Random.Range(0.3f, 0.5f);
-                personality.skill = Random.Range(0.3f, 0.5f);
-                personality.consistency = Random.Range(0.2f, 0.4f);
-                personality.riskTaking = Random.Range(0.2f, 0.4f);
-                personality.patience = Random.Range(0.4f, 0.6f);
-                personality.nitroConservation = Random.Range(0.8f, 1.0f);
-                personality.mistakeProneness = Random.Range(0.4f, 0.7f);
-                personality.pressureResistance = Random.Range(0.2f, 0.4f);
-                personality.comebackDrive = Random.Range(0.3f, 0.5f);
-                break;
-                
-            case AIPersonality.PersonalityType.Blocker:
-                personality.aggression = Random.Range(0.6f, 0.8f);
-                personality.skill = Random.Range(0.6f, 0.8f);
-                personality.consistency = Random.Range(0.7f, 0.9f);
-                personality.riskTaking = Random.Range(0.3f, 0.5f);
-                personality.patience = Random.Range(0.5f, 0.7f);
-                personality.nitroDefense = Random.Range(0.8f, 1.0f);
-                personality.blockingTendency = Random.Range(0.8f, 1.0f);
-                personality.defensiveDriving = Random.Range(0.8f, 1.0f);
-                personality.mistakeProneness = Random.Range(0.2f, 0.3f);
-                break;
-                
-            case AIPersonality.PersonalityType.Speedster:
-                personality.aggression = Random.Range(0.7f, 0.9f);
-                personality.skill = Random.Range(0.7f, 0.9f);
-                personality.consistency = Random.Range(0.6f, 0.8f);
-                personality.riskTaking = Random.Range(0.6f, 0.8f);
-                personality.patience = Random.Range(0.3f, 0.5f);
-                personality.nitroAggression = Random.Range(0.7f, 0.9f);
-                personality.overtakingAggression = Random.Range(0.7f, 0.9f);
-                personality.blockingTendency = Random.Range(0.2f, 0.4f);
-                personality.mistakeProneness = Random.Range(0.2f, 0.4f);
-                break;
-        }
-        
-        return personality;
+        return AIPersonalityData.CreateRandomized(selectedType);
     }
     
     private void ApplyPersonalityToAI()
     {
-        if (aiController == null) return;
+        if (aiController == null || personalityData == null) return;
         
         // Apply personality traits to AI controller settings
-        // These would need to be exposed as public properties in AIVehicleController
-        
-        // Skill affects precision and consistency
-        float skillMultiplier = personality.skill;
-        
-        // Aggression affects speed targets and overtaking behavior
-        float aggressionMultiplier = personality.aggression;
-        
-        // Risk-taking affects corner speeds and overtaking attempts
-        float riskMultiplier = personality.riskTaking;
+        float skillMultiplier = personalityData.skill;
+        float aggressionMultiplier = personalityData.aggression;
+        float riskMultiplier = personalityData.riskTaking;
         
         // Apply these through reflection or public properties
         ApplyPersonalitySettings(skillMultiplier, aggressionMultiplier, riskMultiplier);
@@ -327,8 +127,8 @@ public class AIPersonalityManager : MonoBehaviour
     
     private IEnumerator SetupRivalriesDelayed()
     {
-        // Wait a bit to ensure all AI personalities are initialized
-        yield return new WaitForSeconds(0.5f);
+        // Wait longer to ensure all AI personalities are initialized
+        yield return new WaitForSeconds(2f);
         SetupRivalries();
     }
     
@@ -341,48 +141,48 @@ public class AIPersonalityManager : MonoBehaviour
         {
             // Add null checks to prevent NullReferenceException
             if (otherManager != this && 
-                personality != null && 
-                otherManager.personality != null && 
-                ShouldBeRivals(personality, otherManager.personality))
+                personalityData != null && 
+                otherManager.personalityData != null && 
+                ShouldBeRivals(personalityData, otherManager.personalityData))
             {
                 if (!rivals.Contains(otherManager))
                 {
                     rivals.Add(otherManager);
                     otherManager.rivals.Add(this);
                     // Rivalry log kept - important for AI behavior verification
-                    Debug.Log($"[Rivalry] {gameObject.name} ({personality.personalityType}) vs {otherManager.gameObject.name} ({otherManager.personality.personalityType})");
+                    Debug.Log($"[Rivalry] {gameObject.name} ({personalityData.personalityType}) vs {otherManager.gameObject.name} ({otherManager.personalityData.personalityType})");
                 }
             }
         }
     }
     
-    private bool ShouldBeRivals(AIPersonality p1, AIPersonality p2)
+    private bool ShouldBeRivals(AIPersonalityData p1, AIPersonalityData p2)
     {
         // Safety check - ensure both personalities are valid
         if (p1 == null || p2 == null) return false;
         
         // Aggressive personalities clash with each other
-        if (p1.personalityType == AIPersonality.PersonalityType.Aggressive && 
-            p2.personalityType == AIPersonality.PersonalityType.Aggressive)
+        if (p1.personalityType == AIPersonalityData.PersonalityType.Aggressive && 
+            p2.personalityType == AIPersonalityData.PersonalityType.Aggressive)
             return Random.value < 0.7f;
         
         // Hotheads clash with everyone
-        if (p1.personalityType == AIPersonality.PersonalityType.Hothead || 
-            p2.personalityType == AIPersonality.PersonalityType.Hothead)
+        if (p1.personalityType == AIPersonalityData.PersonalityType.Hothead || 
+            p2.personalityType == AIPersonalityData.PersonalityType.Hothead)
             return Random.value < 0.5f;
         
         // Blockers vs Speedsters
-        if ((p1.personalityType == AIPersonality.PersonalityType.Blocker && 
-             p2.personalityType == AIPersonality.PersonalityType.Speedster) ||
-            (p1.personalityType == AIPersonality.PersonalityType.Speedster && 
-             p2.personalityType == AIPersonality.PersonalityType.Blocker))
+        if ((p1.personalityType == AIPersonalityData.PersonalityType.Blocker && 
+             p2.personalityType == AIPersonalityData.PersonalityType.Speedster) ||
+            (p1.personalityType == AIPersonalityData.PersonalityType.Speedster && 
+             p2.personalityType == AIPersonalityData.PersonalityType.Blocker))
             return Random.value < 0.6f;
         
         // Veterans vs Rookies (mentorship rivalry)
-        if ((p1.personalityType == AIPersonality.PersonalityType.Veteran && 
-             p2.personalityType == AIPersonality.PersonalityType.Rookie) ||
-            (p1.personalityType == AIPersonality.PersonalityType.Rookie && 
-             p2.personalityType == AIPersonality.PersonalityType.Veteran))
+        if ((p1.personalityType == AIPersonalityData.PersonalityType.Veteran && 
+             p2.personalityType == AIPersonalityData.PersonalityType.Rookie) ||
+            (p1.personalityType == AIPersonalityData.PersonalityType.Rookie && 
+             p2.personalityType == AIPersonalityData.PersonalityType.Veteran))
             return Random.value < 0.4f;
         
         return Random.value < 0.2f; // Small chance for any two drivers to be rivals
@@ -391,7 +191,7 @@ public class AIPersonalityManager : MonoBehaviour
     private void UpdatePressureLevel()
     {
         // Safety check - ensure personality is initialized
-        if (personality == null)
+        if (personalityData == null)
         {
             currentPressure = 0f;
             return;
@@ -402,10 +202,9 @@ public class AIPersonalityManager : MonoBehaviour
         {
             currentPressure = RaceContextManager.Instance.CalculatePressureLevel(
                 aiController, 
-                personality, 
+                personalityData, 
                 isInRivalry, 
-                rivalryIntensity, 
-                mistakeCount
+                rivalryIntensity
             );
         }
         else
@@ -417,181 +216,19 @@ public class AIPersonalityManager : MonoBehaviour
             {
                 currentPressure += 0.3f * rivalryIntensity;
             }
+
             
-            if (mistakeCount > 2)
-            {
-                currentPressure += 0.2f;
-            }
-            
-            currentPressure *= (1f - personality.pressureResistance);
+            currentPressure *= (1f - personalityData.pressureResistance);
             currentPressure = Mathf.Clamp01(currentPressure);
-        }
-    }
-    
-    private void HandleMistakeSystem()
-    {
-        mistakeTimer -= Time.deltaTime;
-        
-        if (isMakingMistake)
-        {
-            if (mistakeTimer <= 0f)
-            {
-                // Recover from mistake
-                RecoverFromMistake();
-            }
-            else
-            {
-                // Apply mistake effects
-                ApplyMistakeEffects();
-            }
-        }
-        else
-        {
-            // Check if should make a mistake
-            float mistakeChance = CalculateMistakeChance();
-            if (Random.value < mistakeChance * Time.deltaTime)
-            {
-                MakeMistake();
-            }
-        }
-    }
-    
-    private float CalculateMistakeChance()
-    {
-        float chance = baseMistakeChance * personality.mistakeProneness;
-        
-        // Pressure increases mistake chance
-        chance += currentPressure * pressureMistakeMultiplier * personality.mistakeProneness;
-        
-        // Rookies make more mistakes early, but learn
-        if (personality.personalityType == AIPersonality.PersonalityType.Rookie)
-        {
-            float learningFactor = Mathf.Clamp01(Time.time / 120f); // Learn over 2 minutes
-            chance *= (2f - learningFactor); // Start at 2x mistakes, reduce to 1x
-        }
-        
-        // Veterans make fewer mistakes under pressure
-        if (personality.personalityType == AIPersonality.PersonalityType.Veteran)
-        {
-            chance *= 0.5f;
-        }
-        
-        // Hotheads make more mistakes when pressured
-        if (personality.personalityType == AIPersonality.PersonalityType.Hothead)
-        {
-            chance += currentPressure * 0.5f;
-        }
-        
-        return chance;
-    }
-    
-    private void MakeMistake()
-    {
-        if (Time.time - lastMistakeTime < 5f) return; // Don't make mistakes too frequently
-        
-        isMakingMistake = true;
-        mistakeTimer = mistakeRecoveryTime * Random.Range(0.8f, 1.2f);
-        lastMistakeTime = Time.time;
-        mistakeCount++;
-        
-        // Choose mistake type based on situation
-        currentMistake = ChooseMistakeType();
-        
-        Debug.Log($"[Mistake] {gameObject.name} making mistake: {currentMistake} (Pressure: {currentPressure:F2})");
-    }
-    
-    private MistakeType ChooseMistakeType()
-    {
-        // Choose mistake based on current situation and personality
-        float cornerFactor = aiController.GetCornerFactor();
-        
-        if (cornerFactor > 0.5f) // In corner
-        {
-            float rand = Random.value;
-            if (rand < 0.3f) return MistakeType.BrakingTooLate;
-            else if (rand < 0.5f) return MistakeType.MissedApex;
-            else if (rand < 0.7f) return MistakeType.Oversteer;
-            else return MistakeType.Understeer;
-        }
-        else // On straight or light corner
-        {
-            float rand = Random.value;
-            if (rand < 0.4f) return MistakeType.BrakingTooEarly;
-            else if (rand < 0.7f) return MistakeType.ThrottleTooEarly;
-            else return MistakeType.WrongLine;
-        }
-    }
-    
-    private void ApplyMistakeEffects()
-    {
-        // Apply mistake effects to AI behavior
-        // This would require modifying AIVehicleController to accept these inputs
-        
-        switch (currentMistake)
-        {
-            case MistakeType.BrakingTooLate:
-                // Reduce braking effectiveness
-                ModifyAIBehavior("braking", -0.3f);
-                break;
-                
-            case MistakeType.BrakingTooEarly:
-                // Increase braking too much
-                ModifyAIBehavior("braking", 0.5f);
-                break;
-                
-            case MistakeType.MissedApex:
-                // Add steering error
-                ModifyAIBehavior("steering", Random.Range(-0.2f, 0.2f));
-                break;
-                
-            case MistakeType.Oversteer:
-                // Reduce steering response
-                ModifyAIBehavior("steering", -0.4f);
-                break;
-                
-            case MistakeType.Understeer:
-                // Increase steering too much
-                ModifyAIBehavior("steering", 0.3f);
-                break;
-                
-            case MistakeType.ThrottleTooEarly:
-                // Apply throttle too early in corner
-                ModifyAIBehavior("throttle", 0.4f);
-                break;
-                
-            case MistakeType.WrongLine:
-                // Add path randomness
-                ModifyAIBehavior("pathRandomness", 2f);
-                break;
         }
     }
     
     private void ModifyAIBehavior(string behaviorType, float modifier)
     {
-        // Use the new behavior modification system in AIVehicleController
+        // Use the behavior modification system in AIVehicleController
         if (aiController != null)
         {
             aiController.ModifyBehavior(behaviorType, modifier);
-        }
-    }
-    
-    private void RecoverFromMistake()
-    {
-        isMakingMistake = false;
-        currentMistake = MistakeType.None;
-        
-        // Reset any modified behaviors
-        ResetAIBehavior();
-        
-        Debug.Log($"[Recovery] {gameObject.name} recovered from mistake");
-    }
-    
-    private void ResetAIBehavior()
-    {
-        // Reset AI behavior to normal
-        if (aiController != null)
-        {
-            aiController.ResetBehaviorModifiers();
         }
     }
     
@@ -624,29 +261,31 @@ public class AIPersonalityManager : MonoBehaviour
     
     private void ApplyRivalryEffects(AIPersonalityManager rival)
     {
+        if (personalityData == null) return;
+        
         // Increase aggression when near rival
         float rivalryBoost = rivalryIntensity * 0.3f;
         
         // Different personalities react differently to rivalries
-        switch (personality.personalityType)
+        switch (personalityData.personalityType)
         {
-            case AIPersonality.PersonalityType.Aggressive:
-            case AIPersonality.PersonalityType.Hothead:
-                // Become more aggressive and mistake-prone
+            case AIPersonalityData.PersonalityType.Aggressive:
+            case AIPersonalityData.PersonalityType.Hothead:
+                // Become more aggressive
                 ModifyAIBehavior("aggression", rivalryBoost);
                 break;
                 
-            case AIPersonality.PersonalityType.Blocker:
+            case AIPersonalityData.PersonalityType.Blocker:
                 // Increase blocking behavior
                 ModifyAIBehavior("blocking", rivalryBoost);
                 break;
                 
-            case AIPersonality.PersonalityType.Speedster:
+            case AIPersonalityData.PersonalityType.Speedster:
                 // Push harder for speed
                 ModifyAIBehavior("speed", rivalryBoost);
                 break;
                 
-            case AIPersonality.PersonalityType.Veteran:
+            case AIPersonalityData.PersonalityType.Veteran:
                 // Become more calculated and defensive
                 ModifyAIBehavior("defense", rivalryBoost);
                 break;
@@ -655,23 +294,25 @@ public class AIPersonalityManager : MonoBehaviour
     
     private void ApplyPersonalityEffects()
     {
+        if (personalityData == null) return;
+        
         // Continuously apply personality effects based on race situation
         
         // Comeback drive - push harder when behind
-        if (personality.comebackDrive > 0.5f)
+        if (personalityData.comebackDrive > 0.5f)
         {
             int position = GetCurrentPosition();
             if (position > 3) // Behind
             {
-                float comebackBoost = personality.comebackDrive * 0.2f;
+                float comebackBoost = personalityData.comebackDrive * 0.2f;
                 ModifyAIBehavior("aggression", comebackBoost);
             }
         }
         
         // Consistency - reduce random variations
-        if (personality.consistency > 0.7f)
+        if (personalityData.consistency > 0.7f)
         {
-            ModifyAIBehavior("pathRandomness", -personality.consistency * 0.5f);
+            ModifyAIBehavior("pathRandomness", -personalityData.consistency * 0.5f);
         }
     }
     
@@ -702,9 +343,16 @@ public class AIPersonalityManager : MonoBehaviour
         }
     }
     
-    public AIPersonality GetPersonality() => personality;
+    public AIPersonalityData GetPersonality() => personalityData;
     public bool IsInRivalry() => isInRivalry;
     public float GetCurrentPressure() => currentPressure;
-    public bool IsMakingMistake() => isMakingMistake;
-    public MistakeType GetCurrentMistake() => currentMistake;
+    
+    /// <summary>
+    /// Assign a personality to this AI (used by race manager)
+    /// </summary>
+    public void AssignPersonality(AIPersonalityData personality)
+    {
+        personalityData = personality;
+        ApplyPersonalityToAI();
+    }
 }
