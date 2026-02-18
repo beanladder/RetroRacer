@@ -96,6 +96,12 @@ public class AIVehicleController : MonoBehaviour
     [SerializeField, Tooltip("Time to wait after completing an overtake before starting another.")]
     private float overtakeCooldown = 3.0f;
     
+    [Header("Starting Grid & Racing Lines")]
+    [SerializeField, Range(0f, 10f), Tooltip("How long to maintain starting grid lane after race start")]
+    private float startingGridDuration = 5f;
+    [SerializeField, Range(0f, 5f), Tooltip("Personality-based racing line offset range")]
+    private float personalityLineOffset = 2.5f;
+    
     // Public properties for external management
     public bool IsRacing { get; set; } = false;
     public float RaceProgress { get; private set; }
@@ -118,6 +124,13 @@ public class AIVehicleController : MonoBehaviour
     private float currentOvertakeOffset = 0f;
     private AIVehicleController carToOvertake = null;
     private float originalAcceleration;
+    private bool isForcedOvertake = false; // Track if overtake was forced by race manager
+    
+    // Starting grid and personality-based racing lines
+    private float startingGridLaneOffset = 0f; // Assigned at spawn based on grid position
+    private float personalityBasedOffset = 0f; // Based on personality type
+    private float raceStartTime = 0f;
+    private bool hasCalculatedPersonalityOffset = false;
     
     // Avoidance system state
     private float committedAvoidanceOffset = 0f;
@@ -142,7 +155,6 @@ public class AIVehicleController : MonoBehaviour
     // Race context for nitro decisions
     private int currentPosition = 1;
     private int totalRacers = 1;
-    private bool isBeingPressured = false;
     private bool hasOpportunityAhead = false;
     
     public enum NitroStrategy
@@ -178,6 +190,12 @@ public class AIVehicleController : MonoBehaviour
     private float behaviorModifier_speed = 0f;
     private float behaviorModifier_defense = 0f;
     private float behaviorModifier_pathRandomness = 0f;
+    
+    // Base values for behavior modification (stored to prevent accumulation)
+    private float baseAggressiveness;
+    private float baseSkillLevel;
+    private float baseMaxSpeedMultiplier;
+    private float basePathRandomness;
     
     [Header("Ramming System")]
     [SerializeField] private bool enableRamming = true;
@@ -283,6 +301,12 @@ public class AIVehicleController : MonoBehaviour
         {
             smoothSteeringController = gameObject.AddComponent<SmoothSteeringController>();
         }
+        
+        // Store base values for behavior modification system
+        baseAggressiveness = aggressiveness;
+        baseSkillLevel = skillLevel;
+        baseMaxSpeedMultiplier = maxSpeedMultiplier;
+        basePathRandomness = pathRandomness;
     }
     
     private void Start()
@@ -326,11 +350,13 @@ public class AIVehicleController : MonoBehaviour
     
     private void Update()
     {
-        // Detect race start
+        // Detect race start and track time
         if (!wasRacing && IsRacing)
         {
             forceStartNitro = true;
             startNitroTimer = startNitroDuration;
+            raceStartTime = Time.time; // Track when race started
+            CalculatePersonalityOffset(); // Calculate personality-based offset once
         }
         wasRacing = IsRacing;
 
@@ -416,8 +442,16 @@ public class AIVehicleController : MonoBehaviour
         float straightFactor = 1f - Mathf.Clamp01(cornerFactor * 2f);
         float adaptiveRandomOffset = currentRandomOffset * Mathf.Lerp(0.2f, 1.0f, straightFactor);
 
+        // === STARTING GRID & PERSONALITY-BASED RACING LINES ===
+        // Blend from starting grid lane to personality-based offset over time
+        float timeSinceRaceStart = Time.time - raceStartTime;
+        float gridToPersonalityBlend = Mathf.Clamp01(timeSinceRaceStart / startingGridDuration);
+        
+        // Calculate the strategic racing line offset
+        float strategicLineOffset = Mathf.Lerp(startingGridLaneOffset, personalityBasedOffset, gridToPersonalityBlend);
+        
         // Smooth and limit the total lateral offset to prevent sudden path changes
-        float rawTotalLateralOffset = adaptiveRandomOffset + currentOvertakeOffset + committedAvoidanceOffset;
+        float rawTotalLateralOffset = adaptiveRandomOffset + currentOvertakeOffset + committedAvoidanceOffset + strategicLineOffset;
         float totalLateralOffset = smoothSteeringController.SmoothLateralOffset(rawTotalLateralOffset);
 
         if (totalLateralOffset != 0)
@@ -703,7 +737,16 @@ public class AIVehicleController : MonoBehaviour
         {
             rammingCooldownTimer -= Time.deltaTime;
             
-            if (rammingCooldownTimer <= 0f)
+            // Personality affects ramming frequency
+            float personalityRammingChance = 1.0f;
+            if (personalityManager?.GetPersonality() != null)
+            {
+                var personality = personalityManager.GetPersonality();
+                // Aggressive/Hothead personalities ram more, Conservative/Veteran less
+                personalityRammingChance = personality.aggression * personality.riskTaking;
+            }
+            
+            if (rammingCooldownTimer <= 0f && Random.value < personalityRammingChance)
             {
                 // Find ramming opportunity
                 FindRammingTarget();
@@ -711,20 +754,21 @@ public class AIVehicleController : MonoBehaviour
                 if (rammingTarget != null)
                 {
                     // Check if we're in a corner - reduce ramming in sharp corners
-                    // Use existing cornerFactor variable from above
                     if (cornerFactor > 0.4f)
                     {
                         // Skip ramming in sharp corners
                         rammingCooldownTimer = rammingCooldown * 0.3f;
                         rammingTarget = null;
-                        return;
                     }
-                    
-                    // Execute ramming maneuver
-                    ExecuteRamming();
-                    
-                    // Reset cooldown
-                    rammingCooldownTimer = rammingCooldown * Random.Range(0.8f, 1.2f);
+                    else
+                    {
+                        // Execute ramming maneuver
+                        ExecuteRamming();
+                        
+                        // Reset cooldown (shorter for aggressive personalities)
+                        float cooldownMultiplier = personalityRammingChance > 0.7f ? 0.7f : 1.0f;
+                        rammingCooldownTimer = rammingCooldown * Random.Range(0.8f, 1.2f) * cooldownMultiplier;
+                    }
                 }
                 else
                 {
@@ -748,6 +792,23 @@ public class AIVehicleController : MonoBehaviour
     
     private void UpdateOvertakingLogic(float idealSpeedNormalized)
     {
+        // Don't interrupt forced overtakes with natural overtaking logic
+        if (isForcedOvertake && isOvertaking)
+        {
+            // Let forced overtake complete naturally
+            if (carToOvertake == null || Vector3.Dot(transform.forward, carToOvertake.transform.position - transform.position) < 0)
+            {
+                // Forced overtake complete
+                isOvertaking = false;
+                isForcedOvertake = false;
+                targetOvertakeOffset = 0f;
+                overtakeCooldownTimer = overtakeCooldown;
+                carToOvertake = null;
+                vehicleController.Acceleration = originalAcceleration;
+            }
+            return;
+        }
+        
         if (overtakeCooldownTimer > 0)
         {
             overtakeCooldownTimer -= Time.deltaTime;
@@ -760,27 +821,28 @@ public class AIVehicleController : MonoBehaviour
             if (carToOvertake == null) 
             {
                 isOvertaking = false;
+                isForcedOvertake = false;
                 targetOvertakeOffset = 0f;
                 overtakeCooldownTimer = overtakeCooldown;
                 carToOvertake = null;
-                vehicleController.Acceleration = originalAcceleration; // Reset acceleration
+                vehicleController.Acceleration = originalAcceleration;
                 return;
             }
 
             Vector3 directionToTargetCar = carToOvertake.transform.position - transform.position;
             if (Vector3.Dot(transform.forward, directionToTargetCar) < 0)
             {
-                // Overtake completion log removed - too frequent
                 isOvertaking = false;
+                isForcedOvertake = false;
                 targetOvertakeOffset = 0f;
                 overtakeCooldownTimer = overtakeCooldown;
                 carToOvertake = null;
-                vehicleController.Acceleration = originalAcceleration; // Reset acceleration
+                vehicleController.Acceleration = originalAcceleration;
             }
             return; 
         }
 
-        // Find the closest car in front
+        // Natural overtaking logic
         AIVehicleController leadCar = FindCarToOvertake(idealSpeedNormalized);
         
         if (leadCar != null)
@@ -789,17 +851,16 @@ public class AIVehicleController : MonoBehaviour
             
             if (timeStuck > overtakeTriggerTime)
             {
-                // Overtake start log removed - too frequent
                 isOvertaking = true;
+                isForcedOvertake = false; // Natural overtake
                 carToOvertake = leadCar;
                 timeStuck = 0f;
                 float boostFactor = Random.Range(1.1f, 1.3f);
-                vehicleController.Acceleration = originalAcceleration * boostFactor; // Boost acceleration
+                vehicleController.Acceleration = originalAcceleration * boostFactor;
                 
                 float overtakeDirection = (Random.value > 0.5f) ? 1f : -1f;
                 targetOvertakeOffset = overtakeLaneOffset * overtakeDirection;
 
-                // NEW: Ask the car being overtaken to defend
                 leadCar.TryStartDefense(vehicleController.Acceleration);
             }
         }
@@ -966,16 +1027,22 @@ public class AIVehicleController : MonoBehaviour
     // Force an overtake attempt on a specific car (called by AIRaceManager)
     public void ForceOvertake(AIVehicleController target)
     {
-        if (target == null || isOvertaking || carToOvertake == target) return;
-        // Force overtake log removed - manager commands are frequent
+        if (target == null) return;
+        
+        // Allow forced overtakes to override natural overtaking
+        // But don't interrupt an existing forced overtake of the same target
+        if (isForcedOvertake && carToOvertake == target) return;
+        
         isOvertaking = true;
+        isForcedOvertake = true; // Mark as forced - has priority
         carToOvertake = target;
         timeStuck = 0f;
         float boostFactor = Random.Range(1.1f, 1.3f);
         vehicleController.Acceleration = originalAcceleration * boostFactor;
         float overtakeDirection = (Random.value > 0.5f) ? 1f : -1f;
         targetOvertakeOffset = overtakeLaneOffset * overtakeDirection;
-        overtakeCooldownTimer = overtakeCooldown;
+        overtakeCooldownTimer = 0f; // Reset cooldown for forced overtakes
+        
         // Ask the car being overtaken to defend
         target.TryStartDefense(vehicleController.Acceleration);
     }
@@ -988,6 +1055,72 @@ public class AIVehicleController : MonoBehaviour
         {
             vehicleController.inputManager.SetAIInputs(0f, 0f, 1f, false); // Full brake
         }
+    }
+    
+    /// <summary>
+    /// Set the starting grid lane offset for this AI car (called by race manager at spawn)
+    /// </summary>
+    public void SetStartingGridLane(float laneOffset)
+    {
+        startingGridLaneOffset = laneOffset;
+    }
+    
+    /// <summary>
+    /// Calculate personality-based racing line offset
+    /// </summary>
+    private void CalculatePersonalityOffset()
+    {
+        if (hasCalculatedPersonalityOffset) return;
+        
+        var personality = personalityManager?.GetPersonality();
+        if (personality == null)
+        {
+            personalityBasedOffset = 0f;
+            hasCalculatedPersonalityOffset = true;
+            return;
+        }
+        
+        // Different personalities prefer different racing lines
+        switch (personality.personalityType)
+        {
+            case AIPersonalityData.PersonalityType.Aggressive:
+            case AIPersonalityData.PersonalityType.Hothead:
+                // Aggressive drivers take the inside line (tighter, riskier)
+                personalityBasedOffset = Random.Range(-personalityLineOffset, -personalityLineOffset * 0.5f);
+                break;
+                
+            case AIPersonalityData.PersonalityType.Conservative:
+            case AIPersonalityData.PersonalityType.Rookie:
+                // Conservative/Rookie drivers take the outside line (safer, wider)
+                personalityBasedOffset = Random.Range(personalityLineOffset * 0.5f, personalityLineOffset);
+                break;
+                
+            case AIPersonalityData.PersonalityType.Veteran:
+                // Veterans stick close to optimal racing line
+                personalityBasedOffset = Random.Range(-0.5f, 0.5f);
+                break;
+                
+            case AIPersonalityData.PersonalityType.Blocker:
+                // Blockers take defensive middle line
+                personalityBasedOffset = Random.Range(-1f, 1f);
+                break;
+                
+            case AIPersonalityData.PersonalityType.Speedster:
+                // Speedsters vary their line for overtaking opportunities
+                personalityBasedOffset = Random.Range(-personalityLineOffset * 0.7f, personalityLineOffset * 0.7f);
+                break;
+                
+            case AIPersonalityData.PersonalityType.Opportunist:
+                // Opportunists adapt their line
+                personalityBasedOffset = Random.Range(-personalityLineOffset * 0.6f, personalityLineOffset * 0.6f);
+                break;
+                
+            default:
+                personalityBasedOffset = 0f;
+                break;
+        }
+        
+        hasCalculatedPersonalityOffset = true;
     }
 
     // --- NEW: Dynamic Threat Field Avoidance System (Improved) ---
@@ -1091,6 +1224,26 @@ public class AIVehicleController : MonoBehaviour
     public float GetCurrentAccelerationInput() => currentAcceleration;
     public float GetCurrentBrakeInput() => currentHandbrake > 0f ? currentHandbrake : currentBrake;
     
+    // Personality setters - clean alternative to reflection
+    public void SetSkillLevel(float skill) 
+    {
+        skillLevel = Mathf.Clamp01(skill);
+        baseSkillLevel = skillLevel; // Update base value when personality is set
+    }
+    
+    public void SetAggressiveness(float aggro) 
+    {
+        aggressiveness = Mathf.Clamp01(aggro);
+        baseAggressiveness = aggressiveness; // Update base value when personality is set
+    }
+    
+    public void SetRiskTaking(float risk)
+    {
+        // Risk taking could affect corner speed and overtaking behavior
+        // For now, we can map it to existing parameters or store it
+        // This is a placeholder for future risk-based behavior
+    }
+    
     // Behavior modification methods for personality system
     public void ModifyBehavior(string behaviorType, float modifier)
     {
@@ -1107,21 +1260,21 @@ public class AIVehicleController : MonoBehaviour
                 break;
             case "aggression":
                 behaviorModifier_aggression = modifier;
-                aggressiveness = Mathf.Clamp01(aggressiveness + modifier);
+                aggressiveness = Mathf.Clamp01(baseAggressiveness + modifier); // Use base value!
                 break;
             case "blocking":
                 behaviorModifier_blocking = modifier;
                 break;
             case "speed":
                 behaviorModifier_speed = modifier;
-                maxSpeedMultiplier = Mathf.Clamp01(maxSpeedMultiplier + modifier);
+                maxSpeedMultiplier = Mathf.Clamp01(baseMaxSpeedMultiplier + modifier); // Use base value!
                 break;
             case "defense":
                 behaviorModifier_defense = modifier;
                 break;
             case "pathrandomness":
                 behaviorModifier_pathRandomness = modifier;
-                pathRandomness = Mathf.Max(0f, pathRandomness + modifier);
+                pathRandomness = Mathf.Max(0f, basePathRandomness + modifier); // Use base value!
                 break;
         }
     }
@@ -1143,8 +1296,11 @@ public class AIVehicleController : MonoBehaviour
             smoothSteeringController.ResetSmoothingState();
         }
         
-        // Reset modified values to original
-        // Note: This would need to store original values
+        // Reset modified values to base values
+        aggressiveness = baseAggressiveness;
+        skillLevel = baseSkillLevel;
+        maxSpeedMultiplier = baseMaxSpeedMultiplier;
+        pathRandomness = basePathRandomness;
     }
     
     // === STRATEGIC NITRO SYSTEM METHODS ===
@@ -1173,7 +1329,6 @@ public class AIVehicleController : MonoBehaviour
             var context = RaceContextManager.Instance.GetRaceContext(this);
             currentPosition = context.position;
             totalRacers = context.totalRacers;
-            isBeingPressured = context.isBeingPressured;
             hasOpportunityAhead = context.hasOpportunityAhead;
         }
         else
@@ -1186,7 +1341,6 @@ public class AIVehicleController : MonoBehaviour
                 totalRacers = raceManager.SortedRacers.Count + 1;
             }
             
-            isBeingPressured = IsBeingPressuredFromBehind();
             hasOpportunityAhead = HasOvertakingOpportunity();
         }
     }
@@ -1197,16 +1351,19 @@ public class AIVehicleController : MonoBehaviour
         
         var personality = personalityManager.GetPersonality();
         
-        // Adapt strategy based on race situation
+        // Adapt strategy based on race situation, but respect personality traits
         if (currentPosition > totalRacers * 0.7f && RaceProgress > 0.5f)
         {
-            // Far behind in late race - go desperate
-            currentNitroStrategy = NitroStrategy.Desperate;
-        }
-        else if (currentPosition <= 3 && isBeingPressured)
-        {
-            // Leading but under pressure - go defensive
-            currentNitroStrategy = NitroStrategy.Defensive;
+            // Far behind in late race - but respect conservative personalities
+            if (personality.nitroConservation > 0.7f)
+            {
+                // Conservative personalities stay opportunistic even when desperate
+                currentNitroStrategy = NitroStrategy.Opportunistic;
+            }
+            else
+            {
+                currentNitroStrategy = NitroStrategy.Desperate;
+            }
         }
         else if (hasOpportunityAhead && personality.overtakingAggression > 0.6f)
         {
@@ -1215,13 +1372,25 @@ public class AIVehicleController : MonoBehaviour
         }
         else if (RaceProgress < 0.3f)
         {
-            // Early race - be conservative
-            currentNitroStrategy = NitroStrategy.Conservative;
+            // Early race - respect personality's natural strategy
+            if (personality.nitroAggression > 0.7f)
+                currentNitroStrategy = NitroStrategy.Aggressive;
+            else if (personality.nitroDefense > 0.7f)
+                currentNitroStrategy = NitroStrategy.Defensive;
+            else if (personality.nitroConservation > 0.7f)
+                currentNitroStrategy = NitroStrategy.Conservative;
+            else
+                currentNitroStrategy = NitroStrategy.Opportunistic;
         }
         else
         {
-            // Default to opportunistic
-            currentNitroStrategy = NitroStrategy.Opportunistic;
+            // Mid-race - blend situation with personality
+            if (personality.nitroAggression > 0.6f && hasOpportunityAhead)
+                currentNitroStrategy = NitroStrategy.Aggressive;
+            else if (personality.nitroDefense > 0.6f)
+                currentNitroStrategy = NitroStrategy.Defensive;
+            else
+                currentNitroStrategy = NitroStrategy.Opportunistic;
         }
     }
     
@@ -1306,13 +1475,6 @@ public class AIVehicleController : MonoBehaviour
             return Random.value < 0.5f;
         }
         
-        // Use nitro when under pressure to maintain position
-        if (isBeingPressured && currentPosition <= 3)
-        {
-            reason = "Maintaining lead position under pressure";
-            return Random.value < 0.6f;
-        }
-        
         return false;
     }
     
@@ -1322,9 +1484,9 @@ public class AIVehicleController : MonoBehaviour
         var personality = personalityManager?.GetPersonality();
         
         // Use nitro to defend position
-        if (isBeingPressured && IsOnStraight())
+        if (IsOnStraight())
         {
-            reason = "Defending position from pursuer";
+            reason = "Defending position";
             float defenseBonus = personality?.nitroDefense ?? 0.5f;
             return Random.value < (0.6f + defenseBonus * 0.4f);
         }
@@ -1344,7 +1506,7 @@ public class AIVehicleController : MonoBehaviour
         reason = "";
         
         // Wait for perfect opportunities
-        if (hasOpportunityAhead && IsOnLongStraight() && !isBeingPressured)
+        if (hasOpportunityAhead && IsOnLongStraight())
         {
             reason = "Perfect opportunity on long straight";
             return Random.value < 0.7f;
@@ -1404,31 +1566,6 @@ public class AIVehicleController : MonoBehaviour
         return cornerFactor < 0.1f && lookaheadCorner < 0.1f;
     }
     
-    private bool IsBeingPressuredFromBehind()
-    {
-        // Check if cars behind are close and gaining
-        var nearbyVehicles = GetNearbyVehicles();
-        foreach (var vehicle in nearbyVehicles)
-        {
-            Vector3 relativePos = transform.InverseTransformPoint(vehicle.transform.position);
-            if (relativePos.z < 0 && Vector3.Distance(transform.position, vehicle.transform.position) < 15f)
-            {
-                // Car is behind and close
-                Rigidbody vehicleRb = vehicleController.GetComponent<Rigidbody>();
-                Rigidbody otherRb = vehicle.GetComponent<Rigidbody>();
-                if (vehicleRb != null && otherRb != null)
-                {
-                    Vector3 relativeVelocity = vehicleRb.linearVelocity - otherRb.linearVelocity;
-                    if (Vector3.Dot(relativeVelocity, transform.forward) < 0)
-                    {
-                        // Car behind is gaining
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
     
     private bool HasOvertakingOpportunity()
     {

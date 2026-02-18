@@ -43,13 +43,10 @@ public class AIPersonalityData : ScriptableObject
     [Range(0f, 1f), Tooltip("Aggression level when attempting overtakes")]
     public float overtakingAggression = 0.5f;
     
-    [Range(0f, 1f), Tooltip("How defensively the AI drives when under pressure")]
+    [Range(0f, 1f), Tooltip("How defensively the AI drives")]
     public float defensiveDriving = 0.4f;
     
-    [Header("Pressure Response")]
-    [Range(0f, 1f), Tooltip("Resistance to pressure - higher values mean better performance under stress")]
-    public float pressureResistance = 0.6f;
-    
+    [Header("Comeback Drive")]
     [Range(0f, 1f), Tooltip("Drive to catch up when behind - affects comeback performance")]
     public float comebackDrive = 0.5f;
 
@@ -58,7 +55,7 @@ public class AIPersonalityData : ScriptableObject
         Aggressive,     // High aggression, low patience, risky
         Conservative,   // Low aggression, high patience, safe
         Opportunist,    // Medium aggression, waits for chances
-        Hothead,        // Very aggressive, high pressure under racing
+        Hothead,        // Very aggressive, high intensity racing
         Veteran,        // High skill, consistent, strategic
         Rookie,         // Low skill, inconsistent, learns during race
         Blocker,        // Defensive, blocks other drivers
@@ -79,7 +76,7 @@ public class AIPersonalityData : ScriptableObject
             case PersonalityType.Opportunist:
                 return "Strategic driver who waits for the right moment to strike";
             case PersonalityType.Hothead:
-                return "Hot-tempered driver with high aggression under pressure";
+                return "Hot-tempered driver with high aggression and intensity";
             case PersonalityType.Veteran:
                 return "Experienced driver with excellent racecraft and consistency";
             case PersonalityType.Rookie:
@@ -120,7 +117,6 @@ public class AIPersonalityData : ScriptableObject
                 nitroAggression = Random.Range(0.8f, 1.0f);
                 blockingTendency = Random.Range(0.6f, 0.8f);
                 overtakingAggression = Random.Range(0.8f, 1.0f);
-                pressureResistance = Random.Range(0.4f, 0.6f);
                 break;
                 
             case PersonalityType.Conservative:
@@ -131,7 +127,6 @@ public class AIPersonalityData : ScriptableObject
                 patience = Random.Range(0.7f, 0.9f);
                 nitroConservation = Random.Range(0.7f, 0.9f);
                 defensiveDriving = Random.Range(0.7f, 0.9f);
-                pressureResistance = Random.Range(0.7f, 0.9f);
                 break;
                 
             case PersonalityType.Opportunist:
@@ -153,7 +148,6 @@ public class AIPersonalityData : ScriptableObject
                 patience = Random.Range(0.0f, 0.2f);
                 nitroAggression = Random.Range(0.9f, 1.0f);
                 blockingTendency = Random.Range(0.8f, 1.0f);
-                pressureResistance = Random.Range(0.1f, 0.3f);
                 break;
                 
             case PersonalityType.Veteran:
@@ -165,7 +159,6 @@ public class AIPersonalityData : ScriptableObject
                 nitroConservation = Random.Range(0.6f, 0.8f);
                 nitroDefense = Random.Range(0.7f, 0.9f);
                 defensiveDriving = Random.Range(0.6f, 0.8f);
-                pressureResistance = Random.Range(0.8f, 1.0f);
                 break;
                 
             case PersonalityType.Rookie:
@@ -175,7 +168,6 @@ public class AIPersonalityData : ScriptableObject
                 riskTaking = Random.Range(0.2f, 0.4f);
                 patience = Random.Range(0.4f, 0.6f);
                 nitroConservation = Random.Range(0.8f, 1.0f);
-                pressureResistance = Random.Range(0.2f, 0.4f);
                 comebackDrive = Random.Range(0.3f, 0.5f);
                 break;
                 

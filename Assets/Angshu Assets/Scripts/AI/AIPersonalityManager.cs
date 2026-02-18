@@ -5,16 +5,8 @@ using System.Collections.Generic;
 public class AIPersonalityManager : MonoBehaviour
 {
     [Header("Personality Configuration")]
-    [SerializeField, Tooltip("Assign a personality ScriptableObject, or leave null to randomize")]
+    [SerializeField, Tooltip("Personality assigned by Race Manager - do not set manually")]
     private AIPersonalityData personalityData;
-    
-    [SerializeField, Tooltip("If true and no personality assigned, will generate a random personality")]
-    private bool randomizePersonality = true;
-    
-    [SerializeField, Tooltip("Force a specific personality type when randomizing")]
-    private AIPersonalityData.PersonalityType forcedPersonalityType;
-    
-
     
     [Header("Rivalry System")]
     [SerializeField] private List<AIPersonalityManager> rivals = new List<AIPersonalityManager>();
@@ -23,7 +15,6 @@ public class AIPersonalityManager : MonoBehaviour
     
     // Internal state
     private AIVehicleController aiController;
-    private float currentPressure = 0f;
     private float rivalryTimer = 0f;
     
     private void Start()
@@ -36,17 +27,12 @@ public class AIPersonalityManager : MonoBehaviour
             RaceContextManager.Instance.RegisterAICar(aiController);
         }
         
-        // Generate or assign personality
+        // Personality will be assigned by AIRaceManager before Start() is called
+        // If no personality assigned by race manager, generate a random one as fallback
         if (personalityData == null)
         {
-            if (randomizePersonality)
-            {
-                personalityData = GenerateRandomPersonality();
-            }
-            else
-            {
-                personalityData = AIPersonalityData.CreateRandomized(forcedPersonalityType);
-            }
+            Debug.LogWarning($"[AIPersonality] {gameObject.name} has no personality assigned by Race Manager. Generating random personality as fallback.");
+            personalityData = GenerateRandomPersonality();
         }
         
         // Apply personality to AI controller
@@ -61,10 +47,7 @@ public class AIPersonalityManager : MonoBehaviour
     private void Update()
     {
         if (!aiController.IsRacing || personalityData == null) return;
-        
-        // Update pressure level
-        UpdatePressureLevel();
-        
+
         // Handle rivalries
         HandleRivalrySystem();
         
@@ -105,23 +88,12 @@ public class AIPersonalityManager : MonoBehaviour
     
     private void ApplyPersonalitySettings(float skill, float aggression, float risk)
     {
-        // This would require exposing more properties in AIVehicleController
-        // For now, we'll modify the existing public properties
-        
-        var aiType = typeof(AIVehicleController);
-        
-        // Try to set skill level if property exists
-        var skillProperty = aiType.GetField("skillLevel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (skillProperty != null)
+        // Use public setters instead of reflection - clean and safe
+        if (aiController != null)
         {
-            skillProperty.SetValue(aiController, skill);
-        }
-        
-        // Try to set aggressiveness if property exists
-        var aggressivenessProperty = aiType.GetField("aggressiveness", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        if (aggressivenessProperty != null)
-        {
-            aggressivenessProperty.SetValue(aiController, aggression);
+            aiController.SetSkillLevel(skill);
+            aiController.SetAggressiveness(aggression);
+            aiController.SetRiskTaking(risk);
         }
     }
     
@@ -188,40 +160,6 @@ public class AIPersonalityManager : MonoBehaviour
         return Random.value < 0.2f; // Small chance for any two drivers to be rivals
     }
     
-    private void UpdatePressureLevel()
-    {
-        // Safety check - ensure personality is initialized
-        if (personalityData == null)
-        {
-            currentPressure = 0f;
-            return;
-        }
-        
-        // Use shared race context manager for pressure calculation
-        if (RaceContextManager.Instance != null)
-        {
-            currentPressure = RaceContextManager.Instance.CalculatePressureLevel(
-                aiController, 
-                personalityData, 
-                isInRivalry, 
-                rivalryIntensity
-            );
-        }
-        else
-        {
-            // Fallback calculation if no context manager
-            currentPressure = 0f;
-            
-            if (isInRivalry)
-            {
-                currentPressure += 0.3f * rivalryIntensity;
-            }
-
-            
-            currentPressure *= (1f - personalityData.pressureResistance);
-            currentPressure = Mathf.Clamp01(currentPressure);
-        }
-    }
     
     private void ModifyAIBehavior(string behaviorType, float modifier)
     {
@@ -345,7 +283,6 @@ public class AIPersonalityManager : MonoBehaviour
     
     public AIPersonalityData GetPersonality() => personalityData;
     public bool IsInRivalry() => isInRivalry;
-    public float GetCurrentPressure() => currentPressure;
     
     /// <summary>
     /// Assign a personality to this AI (used by race manager)

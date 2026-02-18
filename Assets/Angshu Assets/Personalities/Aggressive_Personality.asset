@@ -24,5 +24,11 @@ MonoBehaviour:
   blockingTendency: 0.65028185
   overtakingAggression: 0.9073795
   defensiveDriving: 0.4
+  waypointInterval: 5
+  rammingFrequency: 0.3
+  rammingIntensity: 0.5
+  sideRammingPreference: 0.5
+  backRammingPreference: 0.5
+  defensiveRammingPreference: 0.3
   pressureResistance: 0.40060428
   comebackDrive: 0.5

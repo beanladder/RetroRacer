@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// Shared race context manager that provides race data, pressure calculation, and position tracking
+/// Shared race context manager that provides race data and position tracking
 /// Used by both AIPersonalityManager and AIVehicleController to avoid duplicate calculations
 /// </summary>
 public class RaceContextManager : MonoBehaviour
@@ -19,8 +19,6 @@ public class RaceContextManager : MonoBehaviour
         public int position = 1;
         public int totalRacers = 1;
         public float raceProgress = 0f;
-        public float pressureLevel = 0f;
-        public bool isBeingPressured = false;
         public bool hasOpportunityAhead = false;
         public List<AIVehicleController> nearbyVehicles = new List<AIVehicleController>();
         public AIRaceManager raceManager = null;
@@ -67,51 +65,6 @@ public class RaceContextManager : MonoBehaviour
         return contextCache[aiCar];
     }
     
-    /// <summary>
-    /// Calculate pressure level for a specific AI car based on race situation
-    /// </summary>
-    public float CalculatePressureLevel(AIVehicleController aiCar, AIPersonalityData personality, bool isInRivalry, float rivalryIntensity)
-    {
-        // Safety checks
-        if (aiCar == null || personality == null) return 0f;
-        
-        var context = GetRaceContext(aiCar);
-        float pressure = 0f;
-        
-        // Position-based pressure
-        if (context.position > 3)
-        {
-            pressure += 0.2f * (context.position - 3) / Mathf.Max(1f, context.totalRacers - 3);
-        }
-        
-        // Being pressured by cars behind
-        if (context.isBeingPressured)
-        {
-            pressure += 0.3f;
-        }
-        
-        // Late race pressure when behind
-        if (context.raceProgress > 0.7f && context.position > context.totalRacers * 0.5f)
-        {
-            pressure += 0.4f;
-        }
-        
-        // Rivalry pressure
-        if (isInRivalry)
-        {
-            pressure += 0.3f * rivalryIntensity;
-        }
-        
-
-        
-        // Personality affects pressure resistance
-        if (personality != null)
-        {
-            pressure *= (1f - personality.pressureResistance);
-        }
-        
-        return Mathf.Clamp01(pressure);
-    }
     
     /// <summary>
     /// Register an AI car for context tracking
@@ -156,10 +109,19 @@ public class RaceContextManager : MonoBehaviour
             context.raceManager = FindFirstObjectByType<AIRaceManager>();
         }
         
-        // Update position and race progress
+        // Get position directly from race manager (single source of truth)
         if (context.raceManager != null)
         {
-            context.position = GetCarPosition(aiCar, context.raceManager);
+            // Use race manager's already-calculated positions
+            if (context.raceManager.CarPositions.TryGetValue(aiCar, out int position))
+            {
+                context.position = position;
+            }
+            else
+            {
+                context.position = 1; // Fallback
+            }
+            
             context.totalRacers = context.raceManager.SortedRacers.Count + 1; // +1 for player
         }
         
@@ -168,18 +130,8 @@ public class RaceContextManager : MonoBehaviour
         // Update nearby vehicles
         context.nearbyVehicles = GetNearbyVehicles(aiCar);
         
-        // Update pressure indicators
-        context.isBeingPressured = IsBeingPressuredFromBehind(aiCar, context.nearbyVehicles);
+        // Update opportunity indicators
         context.hasOpportunityAhead = HasOvertakingOpportunity(aiCar, context.nearbyVehicles);
-    }
-    
-    private int GetCarPosition(AIVehicleController aiCar, AIRaceManager raceManager)
-    {
-        if (raceManager.SortedRacers.Contains(aiCar))
-        {
-            return raceManager.SortedRacers.IndexOf(aiCar) + 1;
-        }
-        return 1;
     }
     
     private List<AIVehicleController> GetNearbyVehicles(AIVehicleController aiCar)
@@ -202,29 +154,6 @@ public class RaceContextManager : MonoBehaviour
         return nearby;
     }
     
-    private bool IsBeingPressuredFromBehind(AIVehicleController aiCar, List<AIVehicleController> nearbyVehicles)
-    {
-        foreach (var vehicle in nearbyVehicles)
-        {
-            Vector3 relativePos = aiCar.transform.InverseTransformPoint(vehicle.transform.position);
-            if (relativePos.z < 0 && Vector3.Distance(aiCar.transform.position, vehicle.transform.position) < 15f)
-            {
-                // Car is behind and close
-                var aiCarRb = aiCar.GetComponent<Rigidbody>();
-                var otherRb = vehicle.GetComponent<Rigidbody>();
-                if (aiCarRb != null && otherRb != null)
-                {
-                    Vector3 relativeVelocity = aiCarRb.linearVelocity - otherRb.linearVelocity;
-                    if (Vector3.Dot(relativeVelocity, aiCar.transform.forward) < 0)
-                    {
-                        // Car behind is gaining
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
     
     private bool HasOvertakingOpportunity(AIVehicleController aiCar, List<AIVehicleController> nearbyVehicles)
     {

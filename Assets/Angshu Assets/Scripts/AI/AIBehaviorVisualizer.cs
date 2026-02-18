@@ -4,32 +4,32 @@ using UnityEditor;
 #endif
 
 /// <summary>
-/// Visualizes AI behavior state and decision-making in Scene View using Gizmos
-/// Shows what the AI is currently doing and thinking above their car
+/// Enhanced AI behavior visualizer - shows everything the AI is doing and planning
+/// Displays current action, next intention, decision-making, and internal state
 /// </summary>
 [RequireComponent(typeof(AIVehicleController))]
 public class AIBehaviorVisualizer : MonoBehaviour
 {
     [Header("Visualization Settings")]
     [SerializeField] private bool showVisualization = true;
-    [SerializeField] private float heightAboveCar = 3f;
-    [SerializeField] private float thoughtHeightOffset = 1.5f;
-    [SerializeField] private float stateDisplayDuration = 2f; // Longer duration to prevent flickering
+    [SerializeField] private float heightAboveCar = 5f;
+    [SerializeField] private float lineSpacing = 0.8f;
+    [SerializeField] private float stateDisplayDuration = 0.5f; // Update frequently
     
     private AIVehicleController aiController;
     private AIPersonalityManager personalityManager;
+    private Ashsvp.SimcadeVehicleController vehicleController;
     
-    // Behavior tracking
-    private string currentBehaviorState = "INITIALIZING";
-    private string currentThought = "Waiting...";
+    // Display info
+    private string currentAction = "INITIALIZING";
+    private string nextIntention = "Waiting...";
+    private string decisionReason = "";
+    private string internalState = "";
     private Color currentStateColor = Color.white;
     private float lastStateChangeTime = 0f;
     private float currentSpeed = 0f;
     
-    // State detection
-    private bool wasOvertaking = false;
-    private bool wasDefending = false;
-    private bool wasUsingNitro = false;
+    // Cached state
     private Vector3 lastPosition;
     private float lastSpeed = 0f;
     
@@ -37,6 +37,7 @@ public class AIBehaviorVisualizer : MonoBehaviour
     {
         aiController = GetComponent<AIVehicleController>();
         personalityManager = GetComponent<AIPersonalityManager>();
+        vehicleController = GetComponent<Ashsvp.SimcadeVehicleController>();
         lastPosition = transform.position;
     }
     
@@ -51,143 +52,273 @@ public class AIBehaviorVisualizer : MonoBehaviour
             currentSpeed = gearSystem.VehicleSpeed;
         }
         
-        // Update behavior state
+        // Update behavior state frequently
         if (Time.time - lastStateChangeTime > stateDisplayDuration)
         {
-            DetectBehaviorState();
+            AnalyzeAIBehavior();
+            lastStateChangeTime = Time.time;
         }
     }
     
-    private void DetectBehaviorState()
+    private void AnalyzeAIBehavior()
     {
         if (aiController == null) return;
         
-        // Get current state info
+        // Gather all AI state information
         bool isRacing = aiController.IsRacing;
-        float currentSpeedCalc = (transform.position - lastPosition).magnitude / Time.deltaTime;
-        bool isUsingNitro = IsUsingNitro();
+        bool isUsingNitro = vehicleController != null && vehicleController.isNitroActive;
         bool isOvertaking = IsOvertaking();
         bool isDefending = IsDefending();
         bool isBraking = IsBraking();
         bool isRamming = IsRamming();
-        bool isUnderPressure = personalityManager != null && personalityManager.GetCurrentPressure() > 0.5f;
         bool isInRivalry = personalityManager != null && personalityManager.IsInRivalry();
+        bool isForcedOvertake = GetIsForcedOvertake();
+        float cornerFactor = aiController.GetCornerFactor();
+        float nitroAmount = vehicleController != null ? vehicleController.currentNitro : 0f;
         
-        string newState = currentBehaviorState;
-        string newThought = currentThought;
-        Color newColor = Color.white;
+        // Determine current action
+        DetermineCurrentAction(isRacing, isUsingNitro, isOvertaking, isDefending, isBraking, isRamming, isInRivalry, isForcedOvertake);
         
+        // Determine next intention
+        DetermineNextIntention(cornerFactor, nitroAmount, isOvertaking, isDefending);
+        
+        // Determine decision reason
+        DetermineDecisionReason(isUsingNitro, isOvertaking, isRamming, cornerFactor);
+        
+        // Build internal state string
+        BuildInternalState(cornerFactor, nitroAmount);
+        
+        // Update tracking
+        lastPosition = transform.position;
+        lastSpeed = currentSpeed;
+    }
+    
+    private void DetermineCurrentAction(bool isRacing, bool isUsingNitro, bool isOvertaking, bool isDefending, bool isBraking, bool isRamming, bool isInRivalry, bool isForcedOvertake)
+    {
         if (!isRacing)
         {
-            newState = "WAITING";
-            newThought = "Ready to race...";
-            newColor = Color.gray;
+            currentAction = "⏸ WAITING";
+            currentStateColor = Color.gray;
         }
-        // Ramming takes priority
         else if (isRamming)
         {
-            newState = "RAMMING!";
-            newThought = "Time to make contact!";
-            newColor = new Color(1f, 0.3f, 0f); // Dark orange
+            currentAction = "💥 RAMMING";
+            currentStateColor = new Color(1f, 0.3f, 0f);
         }
-        // Check for mistakes (sudden speed loss without braking)
-        else if (currentSpeedCalc < lastSpeed * 0.7f && !isBraking && lastSpeed > 10f)
-        {
-            newState = "MISTAKE!";
-            newThought = "Lost control!";
-            newColor = Color.red;
-        }
-        // Nitro usage
         else if (isUsingNitro && isOvertaking)
         {
-            newState = "NITRO ATTACK!";
-            newThought = "Going for the pass!";
-            newColor = new Color(1f, 0.5f, 0f);
+            currentAction = isForcedOvertake ? "⚡ FORCED NITRO ATTACK" : "⚡ NITRO ATTACK";
+            currentStateColor = new Color(1f, 0.5f, 0f);
         }
         else if (isUsingNitro && isDefending)
         {
-            newState = "NITRO DEFENSE!";
-            newThought = "Protecting my position!";
-            newColor = Color.cyan;
+            currentAction = "🛡 NITRO DEFENSE";
+            currentStateColor = Color.cyan;
         }
         else if (isUsingNitro)
         {
-            newState = "BOOSTING";
-            newThought = "Time to go fast!";
-            newColor = Color.yellow;
+            currentAction = "⚡ BOOSTING";
+            currentStateColor = Color.yellow;
         }
-        // Overtaking
         else if (isOvertaking)
         {
-            newState = "OVERTAKING";
-            newThought = "Looking for an opening...";
-            newColor = new Color(1f, 0.65f, 0f);
+            currentAction = isForcedOvertake ? "🎯 FORCED OVERTAKE" : "🏎 OVERTAKING";
+            currentStateColor = new Color(1f, 0.65f, 0f);
         }
-        // Defending
         else if (isDefending)
         {
-            newState = "BLOCKING";
-            newThought = "Not letting them through!";
-            newColor = Color.blue;
+            currentAction = "🛡 DEFENDING";
+            currentStateColor = Color.blue;
         }
-        // Under pressure
-        else if (isUnderPressure && isBraking)
-        {
-            newState = "UNDER PRESSURE";
-            newThought = "They're right behind me!";
-            newColor = new Color(1f, 0.5f, 0.5f);
-        }
-        // Rivalry
         else if (isInRivalry)
         {
-            newState = "RIVALRY BATTLE";
-            newThought = "Time to show them who's boss!";
-            newColor = new Color(1f, 0f, 1f);
+            currentAction = "⚔ RIVALRY BATTLE";
+            currentStateColor = new Color(1f, 0f, 1f);
         }
-        // Heavy braking
         else if (isBraking)
         {
-            newState = "BRAKING";
-            newThought = "Corner ahead, slowing down...";
-            newColor = Color.red;
+            currentAction = "🔴 BRAKING";
+            currentStateColor = Color.red;
         }
-        // Normal racing
-        else if (currentSpeedCalc > 5f)
+        else if (currentSpeed > 5f)
         {
-            newState = "RACING";
-            newThought = "Following the racing line...";
-            newColor = Color.green;
+            currentAction = "🏁 RACING";
+            currentStateColor = Color.green;
         }
         else
         {
-            newState = "CRUISING";
-            newThought = "Taking it easy...";
-            newColor = Color.white;
+            currentAction = "🐌 SLOW";
+            currentStateColor = Color.white;
         }
-        
-        // Update state if changed
-        if (newState != currentBehaviorState)
-        {
-            currentBehaviorState = newState;
-            currentThought = newThought;
-            currentStateColor = newColor;
-            lastStateChangeTime = Time.time;
-        }
-        
-        // Update tracking variables
-        lastPosition = transform.position;
-        lastSpeed = currentSpeedCalc;
-        wasOvertaking = isOvertaking;
-        wasDefending = isDefending;
-        wasUsingNitro = isUsingNitro;
     }
     
-    private bool IsUsingNitro()
+    private void DetermineNextIntention(float cornerFactor, float nitroAmount, bool isOvertaking, bool isDefending)
     {
-        var vehicleController = GetComponent<Ashsvp.SimcadeVehicleController>();
-        if (vehicleController != null)
+        // Look ahead to determine what AI will do next
+        if (cornerFactor > 0.3f)
         {
-            return vehicleController.isNitroActive;
+            nextIntention = "→ Will brake for sharp corner";
+        }
+        else if (cornerFactor > 0.15f)
+        {
+            nextIntention = "→ Will slow for corner";
+        }
+        else if (isOvertaking)
+        {
+            nextIntention = "→ Completing overtake";
+        }
+        else if (isDefending)
+        {
+            nextIntention = "→ Holding position";
+        }
+        else if (nitroAmount > 20f && HasOvertakingOpportunity())
+        {
+            nextIntention = "→ Looking for nitro opportunity";
+        }
+        else if (nitroAmount < 10f)
+        {
+            nextIntention = "→ Conserving nitro";
+        }
+        else if (IsCarAhead())
+        {
+            nextIntention = "→ Planning overtake";
+        }
+        else
+        {
+            nextIntention = "→ Following racing line";
+        }
+    }
+    
+    private void DetermineDecisionReason(bool isUsingNitro, bool isOvertaking, bool isRamming, float cornerFactor)
+    {
+        if (isRamming)
+        {
+            decisionReason = GetRammingReason();
+        }
+        else if (isUsingNitro)
+        {
+            decisionReason = GetNitroReason();
+        }
+        else if (isOvertaking)
+        {
+            decisionReason = "Stuck behind slower car";
+        }
+        else if (cornerFactor > 0.2f)
+        {
+            decisionReason = $"Corner detected ({(cornerFactor * 100):F0}% sharp)";
+        }
+        else
+        {
+            decisionReason = GetPersonalityReason();
+        }
+    }
+    
+    private void BuildInternalState(float cornerFactor, float nitroAmount)
+    {
+        var personality = personalityManager?.GetPersonality();
+        string personalityType = personality != null ? personality.personalityType.ToString() : "Unknown";
+        
+        int position = GetCurrentPosition();
+        float rubberBanding = aiController.RubberBandingFactor;
+        
+        internalState = $"P{position} | {personalityType} | Nitro:{nitroAmount:F0}% | RB:{rubberBanding:F2}x";
+    }
+    
+    private string GetRammingReason()
+    {
+        var personality = personalityManager?.GetPersonality();
+        if (personality != null)
+        {
+            float rammingChance = personality.aggression * personality.riskTaking;
+            return $"Ramming (Aggro:{(rammingChance * 100):F0}%)";
+        }
+        return "Ramming opportunity";
+    }
+    
+    private string GetNitroReason()
+    {
+        // Try to get nitro strategy via reflection
+        var strategyField = typeof(AIVehicleController).GetField("currentNitroStrategy", 
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        
+        if (strategyField != null)
+        {
+            var strategy = strategyField.GetValue(aiController);
+            return $"Nitro: {strategy} strategy";
+        }
+        
+        return "Using nitro boost";
+    }
+    
+    private string GetPersonalityReason()
+    {
+        var personality = personalityManager?.GetPersonality();
+        if (personality == null) return "Following AI logic";
+        
+        if (personality.aggression > 0.7f)
+            return "Aggressive driving style";
+        else if (personality.skill > 0.8f)
+            return "Veteran precision";
+        else if (personality.consistency > 0.7f)
+            return "Consistent pace";
+        else if (personality.riskTaking > 0.7f)
+            return "Taking risks";
+        else
+            return "Conservative approach";
+    }
+    
+    private int GetCurrentPosition()
+    {
+        var raceManager = FindFirstObjectByType<AIRaceManager>();
+        if (raceManager != null && raceManager.CarPositions.TryGetValue(aiController, out int pos))
+        {
+            return pos;
+        }
+        return 0;
+    }
+    
+    private bool GetIsForcedOvertake()
+    {
+        var field = typeof(AIVehicleController).GetField("isForcedOvertake", 
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        
+        if (field != null)
+        {
+            return (bool)field.GetValue(aiController);
+        }
+        return false;
+    }
+    
+    private bool HasOvertakingOpportunity()
+    {
+        var otherCars = FindObjectsByType<AIVehicleController>(FindObjectsSortMode.None);
+        foreach (var other in otherCars)
+        {
+            if (other == aiController || other == null) continue;
+            
+            Vector3 relativePos = transform.InverseTransformPoint(other.transform.position);
+            float distance = Vector3.Distance(transform.position, other.transform.position);
+            
+            if (relativePos.z > 0 && distance < 25f)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    private bool IsCarAhead()
+    {
+        var otherCars = FindObjectsByType<AIVehicleController>(FindObjectsSortMode.None);
+        foreach (var other in otherCars)
+        {
+            if (other == aiController || other == null) continue;
+            
+            Vector3 relativePos = transform.InverseTransformPoint(other.transform.position);
+            if (relativePos.z > 0 && relativePos.z < 50f)
+            {
+                return true;
+            }
         }
         return false;
     }
@@ -230,8 +361,7 @@ public class AIBehaviorVisualizer : MonoBehaviour
     
     private bool IsBraking()
     {
-        float currentSpeedCalc = (transform.position - lastPosition).magnitude / Time.deltaTime;
-        return currentSpeedCalc < lastSpeed * 0.95f && lastSpeed > 5f;
+        return aiController.GetCurrentBrakeInput() > 0.1f;
     }
     
     private bool IsRamming()
@@ -260,60 +390,58 @@ public class AIBehaviorVisualizer : MonoBehaviour
         showVisualization = show;
     }
     
-    /// <summary>
-    /// Manually set behavior state (for external systems)
-    /// </summary>
-    public void SetBehaviorState(string state, string thought, Color color)
-    {
-        if (!showVisualization) return;
-        
-        currentBehaviorState = state;
-        currentThought = thought;
-        currentStateColor = color;
-        lastStateChangeTime = Time.time;
-    }
-    
 #if UNITY_EDITOR
     private void OnDrawGizmos()
     {
         if (!showVisualization) return;
         
-        // Get personality info
-        string personalityType = "Unknown";
-        if (personalityManager != null && personalityManager.GetPersonality() != null)
-        {
-            personalityType = personalityManager.GetPersonality().personalityType.ToString();
-        }
-        
-        // Calculate speed in km/h for display (already in km/h from GearSystem)
+        // Calculate speed in km/h for display
         float speedKmh = currentSpeed;
         
-        // Draw personality type and speed (top)
-        Vector3 personalityPos = transform.position + Vector3.up * (heightAboveCar + thoughtHeightOffset);
-        GUIStyle personalityStyle = new GUIStyle();
-        personalityStyle.normal.textColor = new Color(1f, 1f, 1f, 0.7f);
-        personalityStyle.fontSize = 11;
-        personalityStyle.fontStyle = FontStyle.Italic;
-        personalityStyle.alignment = TextAnchor.MiddleCenter;
-        Handles.Label(personalityPos, $"[{personalityType}] {speedKmh:F0} km/h", personalityStyle);
+        // Line 1: Current Action (largest, colored)
+        Vector3 line1Pos = transform.position + Vector3.up * heightAboveCar;
+        GUIStyle actionStyle = new GUIStyle();
+        actionStyle.normal.textColor = currentStateColor;
+        actionStyle.fontSize = 14;
+        actionStyle.fontStyle = FontStyle.Bold;
+        actionStyle.alignment = TextAnchor.MiddleCenter;
+        Handles.Label(line1Pos, currentAction, actionStyle);
         
-        // Draw current thought (middle)
-        Vector3 thoughtPos = transform.position + Vector3.up * (heightAboveCar + thoughtHeightOffset * 0.5f);
-        GUIStyle thoughtStyle = new GUIStyle();
-        thoughtStyle.normal.textColor = new Color(1f, 1f, 0.8f, 0.9f);
-        thoughtStyle.fontSize = 10;
-        thoughtStyle.fontStyle = FontStyle.Italic;
-        thoughtStyle.alignment = TextAnchor.MiddleCenter;
-        Handles.Label(thoughtPos, $"\"{currentThought}\"", thoughtStyle);
+        // Line 2: Next Intention (medium, white)
+        Vector3 line2Pos = transform.position + Vector3.up * (heightAboveCar - lineSpacing);
+        GUIStyle intentionStyle = new GUIStyle();
+        intentionStyle.normal.textColor = new Color(1f, 1f, 1f, 0.9f);
+        intentionStyle.fontSize = 11;
+        intentionStyle.fontStyle = FontStyle.Normal;
+        intentionStyle.alignment = TextAnchor.MiddleCenter;
+        Handles.Label(line2Pos, nextIntention, intentionStyle);
         
-        // Draw behavior state (bottom - larger and colored)
-        Vector3 statePos = transform.position + Vector3.up * heightAboveCar;
+        // Line 3: Decision Reason (small, yellow)
+        Vector3 line3Pos = transform.position + Vector3.up * (heightAboveCar - lineSpacing * 2);
+        GUIStyle reasonStyle = new GUIStyle();
+        reasonStyle.normal.textColor = new Color(1f, 1f, 0.6f, 0.8f);
+        reasonStyle.fontSize = 10;
+        reasonStyle.fontStyle = FontStyle.Italic;
+        reasonStyle.alignment = TextAnchor.MiddleCenter;
+        Handles.Label(line3Pos, decisionReason, reasonStyle);
+        
+        // Line 4: Internal State (smallest, gray)
+        Vector3 line4Pos = transform.position + Vector3.up * (heightAboveCar - lineSpacing * 3);
         GUIStyle stateStyle = new GUIStyle();
-        stateStyle.normal.textColor = currentStateColor;
-        stateStyle.fontSize = 13;
-        stateStyle.fontStyle = FontStyle.Bold;
+        stateStyle.normal.textColor = new Color(0.8f, 0.8f, 0.8f, 0.7f);
+        stateStyle.fontSize = 9;
+        stateStyle.fontStyle = FontStyle.Normal;
         stateStyle.alignment = TextAnchor.MiddleCenter;
-        Handles.Label(statePos, currentBehaviorState, stateStyle);
+        Handles.Label(line4Pos, internalState, stateStyle);
+        
+        // Line 5: Speed (bottom, white)
+        Vector3 line5Pos = transform.position + Vector3.up * (heightAboveCar - lineSpacing * 4);
+        GUIStyle speedStyle = new GUIStyle();
+        speedStyle.normal.textColor = new Color(1f, 1f, 1f, 0.9f);
+        speedStyle.fontSize = 12;
+        speedStyle.fontStyle = FontStyle.Bold;
+        speedStyle.alignment = TextAnchor.MiddleCenter;
+        Handles.Label(line5Pos, $"{speedKmh:F0} km/h", speedStyle);
     }
 #endif
 }

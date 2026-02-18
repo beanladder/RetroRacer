@@ -353,6 +353,13 @@ public class AIRaceManager : MonoBehaviour
                 {
                     aiController = carObj.AddComponent<AIVehicleController>();
                 }
+                
+                // === SET STARTING GRID LANE OFFSET ===
+                // Calculate lane offset based on grid position
+                // Left lane = negative offset, right lane = positive offset
+                float laneOffset = (col - gridCenterOffset) * colSpacing;
+                aiController.SetStartingGridLane(laneOffset);
+                
                 aiIndex++;
             }
             // Add to race state
@@ -558,13 +565,23 @@ public class AIRaceManager : MonoBehaviour
                     }
                     float leadAdvantage = leadProgress - secondProgress;
                     float penaltyFactor = Mathf.InverseLerp(0f, 0.1f, leadAdvantage); // 10% of track ahead
-                    racer.RubberBandingFactor = Mathf.Lerp(1f, maxSpeedPenalty, penaltyFactor * rubberBandingStrength);
+                    
+                    // Reduce penalty for high-skill AI
+                    float skillFactor = GetAISkillFactor(racer);
+                    float adjustedPenalty = Mathf.Lerp(maxSpeedPenalty, 1f, skillFactor * 0.3f);
+                    
+                    racer.RubberBandingFactor = Mathf.Lerp(1f, adjustedPenalty, penaltyFactor * rubberBandingStrength);
                 }
                 else
                 {
                     // Other cars get a boost based on how far they are behind the leader.
                     float boostFactor = Mathf.InverseLerp(0f, 0.2f, progressDifference); // 20% of track behind
-                    racer.RubberBandingFactor = Mathf.Lerp(1f, maxSpeedBoost, boostFactor * rubberBandingStrength);
+                    
+                    // Reduce boost for high-skill AI (they don't need as much help)
+                    float skillFactor = GetAISkillFactor(racer);
+                    float adjustedBoost = Mathf.Lerp(maxSpeedBoost, 1f, skillFactor * 0.4f);
+                    
+                    racer.RubberBandingFactor = Mathf.Lerp(1f, adjustedBoost, boostFactor * rubberBandingStrength);
                 }
             }
         }
@@ -626,6 +643,23 @@ public class AIRaceManager : MonoBehaviour
             }
         }
     }
+    
+    /// <summary>
+    /// Get skill factor for an AI car based on its personality (0-1, higher = more skilled)
+    /// </summary>
+    private float GetAISkillFactor(AIVehicleController aiCar)
+    {
+        if (aiCar == null) return 0.5f;
+        
+        var personalityManager = aiCar.GetComponent<AIPersonalityManager>();
+        if (personalityManager != null && personalityManager.GetPersonality() != null)
+        {
+            return personalityManager.GetPersonality().skill;
+        }
+        
+        return 0.5f; // Default mid-skill if no personality
+    }
+    
     /// <summary>
     /// Assign a personality to an AI car from the configured list
     /// </summary>

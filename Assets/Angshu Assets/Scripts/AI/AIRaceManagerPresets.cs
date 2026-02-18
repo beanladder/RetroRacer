@@ -130,19 +130,3 @@ public static class AIRaceManagerPresets
     }
 }
 
-/// <summary>
-/// Component to easily apply presets to AIRaceManager in the inspector
-/// </summary>
-public class AIRaceManagerPresetApplier : MonoBehaviour
-{
-    [Header("Preset Selection")]
-    public AIRaceManager targetRaceManager;
-    
-    private void Start()
-    {
-        if (targetRaceManager == null)
-        {
-            targetRaceManager = FindFirstObjectByType<AIRaceManager>();
-        }
-    }
-}

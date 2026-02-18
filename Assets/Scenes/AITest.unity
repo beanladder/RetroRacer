@@ -390,32 +390,23 @@ MonoBehaviour:
   trackGenerator: {fileID: 379555216}
   aiVehiclePrefabs:
   - {fileID: 1442448109624292080, guid: c45ed9ba711d56e4aaf1b4ee416a2596, type: 3}
-  - {fileID: 5732929322218367154, guid: 57d987d5ad4d1e1418480394f89b0e87, type: 3}
-  - {fileID: 5505070333310861898, guid: 68882d0ce68ab9e4da349189fe83d3e0, type: 3}
   numberOfAIRacers: 3
-  startingOffset: 10
+  startingOffset: 12
   aiPersonalities:
-  - {fileID: 11400000, guid: a8baf253b7884ad4ea9ef46f2f851ec0, type: 2}
-  - {fileID: 11400000, guid: 9975ae4bb0f371c4192242731a0a9cee, type: 2}
-  - {fileID: 11400000, guid: 7f507030d53171f4ba393d13b3cab923, type: 2}
-  - {fileID: 11400000, guid: 40e0cb236dc463e42a09c95c3268170f, type: 2}
   - {fileID: 11400000, guid: d6c3cee17203b6f459dacbdb1e86ebc1, type: 2}
-  - {fileID: 11400000, guid: e9513b67abc67704fa9f1e2a32570763, type: 2}
-  - {fileID: 11400000, guid: c33fa5d3b4fa85e47b70008d84f5e08c, type: 2}
-  - {fileID: 11400000, guid: 06ac681815b28df4aafe35aae7bb1772, type: 2}
   randomizePersonalityAssignment: 1
   rubberBandingStrength: 1
-  maxSpeedBoost: 5
-  maxSpeedPenalty: 5
+  maxSpeedBoost: 1.25
+  maxSpeedPenalty: 0.85
   numberOfLaps: 3
   playerVehiclePrefab: {fileID: 5133139713709978575, guid: 045ea7d5027d0b8468164902ce8cf621, type: 3}
-  spawnPlayer: 0
+  spawnPlayer: 1
   playerTag: Player
   autoSetupAllVehicles: 1
   setupPlayerVehicles: 1
-  respawnHeight: 2
-  respawnForwardOffset: 4
-  respawnInvulnerabilityTime: 1.5
+  respawnHeight: 2.5
+  respawnForwardOffset: 6
+  respawnInvulnerabilityTime: 2.5
   showAIBehaviorVisualization: 1
   aiCarMaterials: []
 --- !u!4 &1054934332

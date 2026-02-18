@@ -24,5 +24,4 @@ MonoBehaviour:
   blockingTendency: 0.3
   overtakingAggression: 0.5
   defensiveDriving: 0.62017864
-  pressureResistance: 0.9161488
   comebackDrive: 0.5

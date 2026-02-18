@@ -2,20 +2,14 @@
 using UnityEngine;
 using UnityEditor;
 
-[CustomEditor(typeof(AIRaceManagerPresetApplier))]
-public class AIRaceManagerPresetEditor : Editor
+[CustomEditor(typeof(AIRaceManager))]
+public class AIRaceManagerEditor : Editor
 {
     public override void OnInspectorGUI()
     {
         DrawDefaultInspector();
         
-        AIRaceManagerPresetApplier presetApplier = (AIRaceManagerPresetApplier)target;
-        
-        if (presetApplier.targetRaceManager == null)
-        {
-            EditorGUILayout.HelpBox("Please assign a Target Race Manager", MessageType.Warning);
-            return;
-        }
+        AIRaceManager raceManager = (AIRaceManager)target;
         
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("Quick Preset Application", EditorStyles.boldLabel);
@@ -24,20 +18,20 @@ public class AIRaceManagerPresetEditor : Editor
         
         if (GUILayout.Button("Competitive\n(Recommended)", GUILayout.Height(40)))
         {
-            AIRaceManagerPresets.ApplyThreeRacerPreset(presetApplier.targetRaceManager);
-            EditorUtility.SetDirty(presetApplier.targetRaceManager);
+            AIRaceManagerPresets.ApplyThreeRacerPreset(raceManager);
+            EditorUtility.SetDirty(raceManager);
         }
         
         if (GUILayout.Button("Casual\n(Easy)", GUILayout.Height(40)))
         {
-            AIRaceManagerPresets.ApplyThreeRacerCasualPreset(presetApplier.targetRaceManager);
-            EditorUtility.SetDirty(presetApplier.targetRaceManager);
+            AIRaceManagerPresets.ApplyThreeRacerCasualPreset(raceManager);
+            EditorUtility.SetDirty(raceManager);
         }
         
         if (GUILayout.Button("Hardcore\n(Challenging)", GUILayout.Height(40)))
         {
-            AIRaceManagerPresets.ApplyThreeRacerHardcorePreset(presetApplier.targetRaceManager);
-            EditorUtility.SetDirty(presetApplier.targetRaceManager);
+            AIRaceManagerPresets.ApplyThreeRacerHardcorePreset(raceManager);
+            EditorUtility.SetDirty(raceManager);
         }
         
         GUILayout.EndHorizontal();
