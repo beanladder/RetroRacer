@@ -193,9 +193,21 @@ namespace Track
                     out float3 sfTangent, 
                     out float3 sfUp);
                 Vector3 sfWorldPos = transform.TransformPoint(sfPosition);
+                
+                // Get terrain height if available
+                Terrain terrain = FindObjectOfType<Terrain>();
+                if (terrain != null)
+                {
+                    float terrainHeight = terrain.SampleHeight(sfWorldPos) + terrain.transform.position.y;
+                    sfWorldPos.y = terrainHeight + checkpointVerticalOffset;
+                }
+                else
+                {
+                    sfWorldPos.y += checkpointVerticalOffset;
+                }
+                
                 Quaternion sfRotation = Quaternion.LookRotation(transform.TransformDirection(sfTangent));
-                sfRotation *= Quaternion.Euler(0, 0, 0); 
-                sfWorldPos += Vector3.up * (Width * 0.5f + checkpointVerticalOffset);
+                sfRotation *= Quaternion.Euler(0, 0, 0);
                 GameObject sfLine = Instantiate(
                     startFinishLinePrefab,
                     sfWorldPos,
@@ -220,9 +232,21 @@ namespace Track
                     out float3 tangent, 
                     out float3 up);
                 Vector3 worldPos = transform.TransformPoint(position);
+                
+                // Get terrain height if available
+                Terrain terrain = FindObjectOfType<Terrain>();
+                if (terrain != null)
+                {
+                    float terrainHeight = terrain.SampleHeight(worldPos) + terrain.transform.position.y;
+                    worldPos.y = terrainHeight + checkpointVerticalOffset;
+                }
+                else
+                {
+                    worldPos.y += checkpointVerticalOffset;
+                }
+                
                 Quaternion rotation = Quaternion.LookRotation(transform.TransformDirection(tangent));
-                rotation *= Quaternion.Euler(0, 90, 0); 
-                worldPos += Vector3.up * (Width * 0.5f + checkpointVerticalOffset);
+                rotation *= Quaternion.Euler(0, 90, 0);
                 if (checkpointPrefab != null)
                 {
                 GameObject checkpoint = Instantiate(
@@ -246,8 +270,20 @@ namespace Track
             yield return new WaitForSeconds(0.4f);
             StartCoroutine(GenerateSpline());
             yield return new WaitForSeconds(0.4f);
-            StartCoroutine(GenerateMesh());
-            yield return new WaitForSeconds(0.4f);
+            
+            // Generate terrain BEFORE mesh so track can conform to it
+            TrackTerrainIntegrator terrainIntegrator = GetComponent<TrackTerrainIntegrator>();
+            if (terrainIntegrator != null)
+            {
+                terrainIntegrator.GenerateDesertAndIntegrate();
+                yield return new WaitForSeconds(1.5f); // Wait for terrain generation
+            }
+            else
+            {
+                StartCoroutine(GenerateMesh());
+                yield return new WaitForSeconds(0.4f);
+            }
+            
             // Add or update the fall trigger after mesh generation
             CreateOrUpdateFallTrigger();
             StartCoroutine(GenerateCheckpoints());

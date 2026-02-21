@@ -9,19 +9,28 @@ using System.Linq;
 public class TrackGeneratorEditor : UnityEditor.Editor
 {
     private TrackGenerator _trackGenerator;
+    private TrackTerrainIntegrator _terrainIntegrator;
 
     public override void OnInspectorGUI()
     {
         base.OnInspectorGUI();
 
         _trackGenerator = (TrackGenerator)target;
+        _terrainIntegrator = _trackGenerator.GetComponent<TrackTerrainIntegrator>();
 
         EditorGUILayout.Space();
 
-        if (GUILayout.Button(new GUIContent("Generate", "Generate track")))
+        if (GUILayout.Button(new GUIContent("Generate", "Generate track with procedural desert terrain")))
         {
             if (Application.isPlaying)
+            {
+                // Check if terrain integrator exists
+                if (_terrainIntegrator == null)
+                {
+                    EditorGUILayout.HelpBox("Add TrackTerrainIntegrator component to auto-generate terrain!", MessageType.Info);
+                }
                 _trackGenerator.Generate();
+            }
             else
                 Debug.LogWarning("Generate in Play mode!");
         }
@@ -32,6 +41,22 @@ public class TrackGeneratorEditor : UnityEditor.Editor
                 _trackGenerator.StartCoroutine(_trackGenerator.GenerateMesh());
             else
                 Debug.LogWarning("Generate in Play mode!");
+        }
+
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Terrain Setup", EditorStyles.boldLabel);
+        
+        if (_terrainIntegrator == null)
+        {
+            EditorGUILayout.HelpBox("Add TrackTerrainIntegrator to auto-generate desert terrain when clicking Generate.", MessageType.Info);
+            if (GUILayout.Button(new GUIContent("Add Terrain Integrator", "Enable automatic desert generation")))
+            {
+                _trackGenerator.gameObject.AddComponent<TrackTerrainIntegrator>();
+            }
+        }
+        else
+        {
+            EditorGUILayout.HelpBox("Terrain will be auto-generated when you click Generate above.", MessageType.Info);
         }
 
         EditorGUILayout.Space();
