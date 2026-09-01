@@ -1844,7 +1844,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   checkpointPrefab: {fileID: 6887255157338661786, guid: ad825f94feeff40e5b8b8af6ddb00ac2, type: 3}
   numberOfCheckpoints: 10
-  checkpointVerticalOffset: -12
+  checkpointVerticalOffset: -2
   <Resolution>k__BackingField: 2000
   <Width>k__BackingField: 20
   <GenerateCollider>k__BackingField: 1

@@ -342,7 +342,6 @@ MonoBehaviour:
   m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
   m_RequiresDepthTexture: 0
   m_RequiresColorTexture: 0
-  m_Version: 2
   m_TaaSettings:
     m_Quality: 3
     m_FrameInfluence: 0.1
@@ -350,6 +349,7 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
 --- !u!1001 &379555215
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -402,15 +402,19 @@ PrefabInstance:
       propertyPath: m_Name
       value: TrackSeed2_Track
       objectReference: {fileID: 0}
+    - target: {fileID: 6179855613530413723, guid: 2f0b99bb0043844a1b37d3c7b5ae8fed, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 2f0b99bb0043844a1b37d3c7b5ae8fed, type: 3}
---- !u!114 &379555216 stripped
+--- !u!114 &387028035 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 3861667448288970350, guid: 2f0b99bb0043844a1b37d3c7b5ae8fed, type: 3}
-  m_PrefabInstance: {fileID: 379555215}
+  m_CorrespondingSourceObject: {fileID: 2749542356439833918, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+  m_PrefabInstance: {fileID: 1824954880}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
   m_Enabled: 1
@@ -428,6 +432,8 @@ GameObject:
   m_Component:
   - component: {fileID: 1054934332}
   - component: {fileID: 1054934331}
+  - component: {fileID: 1054934334}
+  - component: {fileID: 1054934333}
   m_Layer: 0
   m_Name: RaceManager
   m_TagString: Untagged
@@ -447,23 +453,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d0b7a5b238aec4fbfb1c552f3fbd3a62, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  trackGenerator: {fileID: 379555216}
+  trackGenerator: {fileID: 387028035}
   aiVehiclePrefabs:
   - {fileID: 321616085496138627, guid: 3de01424804a7cf41bbc5266ad066d86, type: 3}
   - {fileID: 5505070333310861898, guid: 68882d0ce68ab9e4da349189fe83d3e0, type: 3}
   - {fileID: 5133139713709978575, guid: 045ea7d5027d0b8468164902ce8cf621, type: 3}
   - {fileID: 5732929322218367154, guid: 57d987d5ad4d1e1418480394f89b0e87, type: 3}
-  numberOfAIRacers: 9
-  startingOffset: 15
-  minSkillLevel: 0.5
-  maxSkillLevel: 0.9
-  minAggressiveness: 0
+  numberOfAIRacers: 4
+  startingOffset: 7.5
+  minSkillLevel: 1
+  maxSkillLevel: 1
+  minAggressiveness: 1
   maxAggressiveness: 1
-  rubberBandingStrength: 0.5
+  rubberBandingStrength: 0.636
   maxSpeedBoost: 2.93
   maxSpeedPenalty: 0.9
   numberOfLaps: 3
-  playerVehiclePrefab: {fileID: 321616085496138627, guid: 3de01424804a7cf41bbc5266ad066d86, type: 3}
+  playerVehiclePrefab: {fileID: 5505070333310861898, guid: 68882d0ce68ab9e4da349189fe83d3e0, type: 3}
   spawnPlayer: 1
   playerTag: Player
   aiCarMaterials:
@@ -472,6 +478,7 @@ MonoBehaviour:
   - {fileID: 2100000, guid: 9c1af373962c54b5cbc3a3dc14d50e07, type: 2}
   - {fileID: 2100000, guid: ae61104120c2045b994805192c783a33, type: 2}
   - {fileID: 2100000, guid: 63efe746354bd49259554e05db302c12, type: 2}
+  verboseLogging: 0
 --- !u!4 &1054934332
 Transform:
   m_ObjectHideFlags: 0
@@ -487,6 +494,49 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1054934333
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054934330}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 986b70093292e734a817c602c335bca9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AISpectatorCamera
+  orbitDistance: 14
+  minOrbitDistance: 5
+  maxOrbitDistance: 70
+  orbitSensitivity: 3.5
+  orbitZoomSpeed: 12
+  pitchLimits: {x: -20, y: 75}
+  followSharpness: 6
+  flySpeed: 35
+  flyBoost: 3
+  flyLookSensitivity: 3.5
+--- !u!114 &1054934334
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1054934330}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 194fd309140c16448bf78e94eb0026a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AIDebugHud
+  showHud: 1
+  showDetail: 1
+  origin: {x: 12, y: 12}
+  fontSize: 12
+  toggleKey: 94
+  cycleKey: 95
+  gizmoKey: 96
+  runtimeVisualsKey: 97
+  spectatorKey: 98
 --- !u!1 &1157603931
 GameObject:
   m_ObjectHideFlags: 0
@@ -513,14 +563,14 @@ Light:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1157603931}
   m_Enabled: 1
-  serializedVersion: 11
+  serializedVersion: 12
   m_Type: 1
   m_Color: {r: 1, g: 0.95686275, b: 0.8392157, a: 1}
   m_Intensity: 1
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.80208
-  m_CookieSize: 10
+  m_CookieSize2D: {x: 10, y: 10}
   m_Shadows:
     m_Type: 2
     m_Resolution: -1
@@ -597,17 +647,80 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Version: 3
   m_UsePipelineSettings: 1
   m_AdditionalLightsShadowResolutionTier: 2
-  m_LightLayerMask: 1
-  m_RenderingLayers: 1
   m_CustomShadowLayers: 0
-  m_ShadowLayerMask: 1
-  m_ShadowRenderingLayers: 1
   m_LightCookieSize: {x: 1, y: 1}
   m_LightCookieOffset: {x: 0, y: 0}
   m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
+--- !u!1001 &1824954880
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 504.75906
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 9.531009
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 337.5116
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1433095215346502511, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6650151235165186087, guid: be399f40d62cc0e41956120330d184eb, type: 3}
+      propertyPath: m_Name
+      value: TrackSeed5_Track
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: be399f40d62cc0e41956120330d184eb, type: 3}
 --- !u!1001 &5179262855245981045
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -679,3 +792,4 @@ SceneRoots:
   - {fileID: 1054934332}
   - {fileID: 157744108}
   - {fileID: 379555215}
+  - {fileID: 1824954880}

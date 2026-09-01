@@ -1,6 +1,7 @@
 using UnityEngine;
 using Unity.Cinemachine;
 using UnityEngine.Splines;
+using UnityEngine.InputSystem;
 
 public class SplineKnotCameraNavigator : MonoBehaviour
 {
@@ -32,13 +33,13 @@ public class SplineKnotCameraNavigator : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.RightArrow))
+        if (Keyboard.current != null && Keyboard.current.rightArrowKey.wasPressedThisFrame)
         {
             // Move right (decrement index)
             currentKnotIndex = (currentKnotIndex - 1 + knotCount) % knotCount;
             MoveToKnot(currentKnotIndex);
         }
-        else if (Input.GetKeyDown(KeyCode.LeftArrow))
+        else if (Keyboard.current != null && Keyboard.current.leftArrowKey.wasPressedThisFrame)
         {
             // Move left (increment index)
             currentKnotIndex = (currentKnotIndex + 1) % knotCount;

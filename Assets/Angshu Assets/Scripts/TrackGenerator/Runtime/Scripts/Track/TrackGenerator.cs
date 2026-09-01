@@ -5,6 +5,7 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Rendering;
 using UnityEngine.Splines;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -15,6 +16,8 @@ namespace Track
     [RequireComponent(typeof(SplineContainer), typeof(MeshFilter), typeof(MeshRenderer))]
     public abstract class TrackGenerator : MonoBehaviour
     {
+        public const string WallsObjectName = "TrackWalls";
+
         [Header("Racing Line Configuration")]
         [SerializeField, Tooltip("Whether to generate a racing line for AI vehicles")]
         private bool generateRacingLine = true;
@@ -52,14 +55,27 @@ namespace Track
         [SerializeField, Tooltip("Number of checkpoints to place along the track"), Range(4, 100)]
         private int numberOfCheckpoints = 10;
         
-        [SerializeField, Tooltip("Vertical offset above track surface")]
+        [SerializeField, Tooltip("Vertical offset above the track surface, measured at the reference width. Scales with the track.")]
         private float checkpointVerticalOffset = 1f;
+
+        [SerializeField, Tooltip("Scale the checkpoint and start/finish prefabs so they always span the track mesh.")]
+        private bool scaleMarkersToTrackWidth = true;
+
+        [SerializeField, Tooltip("The Width the checkpoint and start/finish prefabs were authored against. They are rescaled by Width / this value.")]
+        private float markerReferenceWidth = 20f;
+
         public int NumberOfCheckpoints => numberOfCheckpoints;
+
+        /// <summary>
+        /// Uniform scale that maps prefabs authored for <see cref="markerReferenceWidth"/> onto the current track width.
+        /// </summary>
+        public float MarkerScale =>
+            scaleMarkersToTrackWidth && markerReferenceWidth > 0.001f ? Width / markerReferenceWidth : 1f;
 
         [field: SerializeField, Tooltip("The resolution of the track. The number of segments that'll be used to generate the track mesh.")]
         public int Resolution { get; private set; } = 10000;
 
-        [field: SerializeField, Tooltip("The width of the track.")]
+        [field: SerializeField, Tooltip("Half the width of the track: the distance from the centre line out to either edge of the mesh.")]
         public float Width { get; private set; } = 3f;
 
         [field: SerializeField, Tooltip("Add a Mesh Collider to the track.")]
@@ -82,6 +98,34 @@ namespace Track
         [Header("Track Thickness")]
         [SerializeField, Tooltip("Vertical thickness of the track mesh.")]
         private float _thickness = 1.0f;
+
+        [Header("Track Walls")]
+        [SerializeField, Tooltip("Build solid barrier walls along both edges of the track mesh so cars cannot fall off.")]
+        private bool generateWalls = true;
+
+        [SerializeField, Tooltip("How tall the walls stand above the track surface.")]
+        private float wallHeight = 6f;
+
+        [SerializeField, Tooltip("How thick the walls are, measured outward from the track edge.")]
+        private float wallThickness = 1.5f;
+
+        [SerializeField, Tooltip("How far the inner face of the wall sits inside the track edge. Keep it slightly above zero so the wall does not z-fight with the side of the road slab.")]
+        private float wallInset = 0.1f;
+
+        [SerializeField, Tooltip("How far the walls extend below the track surface so no gap shows on slopes.")]
+        private float wallSkirtDepth = 2f;
+
+        [SerializeField, Range(50, 5000), Tooltip("Number of segments used around the track for the wall mesh.")]
+        private int wallResolution = 1500;
+
+        [SerializeField, Tooltip("Material for the walls. Falls back to the track material when empty.")]
+        private Material wallMaterial;
+
+        [SerializeField, Tooltip("Physics material for the walls. A low friction material keeps cars from catching on them.")]
+        private PhysicsMaterial wallPhysicsMaterial;
+
+        [SerializeField, Tooltip("Texture repeats per world unit along the walls.")]
+        private float wallUVScale = 0.1f;
 
         [Header("Material Animation")]
         [SerializeField] private float _integrationDuration = 2f;
@@ -150,6 +194,9 @@ namespace Track
                     Destroy(child.gameObject);
             }
         
+            // Prefabs are authored for a fixed track width, so rescale them onto the current one
+            float markerScale = MarkerScale;
+
             // Calculate equal spacing based on spline length
             float totalLength = Spline.GetLength();
             float interval = totalLength / numberOfCheckpoints;
@@ -195,13 +242,14 @@ namespace Track
                 Vector3 sfWorldPos = transform.TransformPoint(sfPosition);
                 Quaternion sfRotation = Quaternion.LookRotation(transform.TransformDirection(sfTangent));
                 sfRotation *= Quaternion.Euler(0, 0, 0); 
-                sfWorldPos += Vector3.up * (Width * 0.5f + checkpointVerticalOffset);
+                sfWorldPos += Vector3.up * (checkpointVerticalOffset * markerScale);
                 GameObject sfLine = Instantiate(
                     startFinishLinePrefab,
                     sfWorldPos,
                     sfRotation,
                     transform
                 );
+                sfLine.transform.localScale = startFinishLinePrefab.transform.localScale * markerScale;
                 sfLine.name = "StartFinishLine";
                 sfLine.tag = "StartFinish";
             }
@@ -222,16 +270,17 @@ namespace Track
                 Vector3 worldPos = transform.TransformPoint(position);
                 Quaternion rotation = Quaternion.LookRotation(transform.TransformDirection(tangent));
                 rotation *= Quaternion.Euler(0, 90, 0); 
-                worldPos += Vector3.up * (Width * 0.5f + checkpointVerticalOffset);
+                worldPos += Vector3.up * (checkpointVerticalOffset * markerScale);
                 if (checkpointPrefab != null)
                 {
-                GameObject checkpoint = Instantiate(
-                    checkpointPrefab,
-                    worldPos,
-                    rotation,
-                    transform
-                );
-                checkpoint.name = $"Checkpoint_{i}";
+                    GameObject checkpoint = Instantiate(
+                        checkpointPrefab,
+                        worldPos,
+                        rotation,
+                        transform
+                    );
+                    checkpoint.transform.localScale = checkpointPrefab.transform.localScale * markerScale;
+                    checkpoint.name = $"Checkpoint_{i}";
                     checkpoint.tag = "Checkpoint";
                 }
                 currentDistance += interval;
@@ -420,6 +469,9 @@ namespace Track
                 _meshCollider.sharedMesh = _meshFilter.sharedMesh;
             }
 
+            // Walls follow the same spline and width, so rebuild them whenever the mesh changes
+            GenerateWalls();
+
             // Debug visualization
             if (_showDebugLines)
             {
@@ -541,6 +593,194 @@ namespace Track
                     Vector3 gridPoint = boundsCenter + new Vector3(x, 0, z);
                     Debug.DrawLine(gridPoint, gridPoint + Vector3.up * 0.5f, Color.yellow);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds the barrier walls that run along both edges of the track mesh.
+        /// </summary>
+        public void GenerateWalls()
+        {
+            Transform existing = transform.Find(WallsObjectName);
+
+            if (!generateWalls)
+            {
+                if (existing != null)
+                {
+                    DestroyImmediate(existing.gameObject);
+                }
+
+                return;
+            }
+
+            if (Spline == null || Spline.Count < 2) return;
+
+            Mesh wallMesh = BuildWallMesh();
+            if (wallMesh == null) return;
+
+            GameObject walls = existing != null ? existing.gameObject : new GameObject(WallsObjectName);
+
+            walls.transform.SetParent(transform, false);
+            walls.transform.localPosition = Vector3.zero;
+            walls.transform.localRotation = Quaternion.identity;
+            walls.transform.localScale = Vector3.one;
+            walls.layer = gameObject.layer;
+
+            if (!walls.TryGetComponent(out MeshFilter filter))
+            {
+                filter = walls.AddComponent<MeshFilter>();
+            }
+
+            filter.sharedMesh = wallMesh;
+
+            if (!walls.TryGetComponent(out MeshRenderer wallRenderer))
+            {
+                wallRenderer = walls.AddComponent<MeshRenderer>();
+            }
+
+            wallRenderer.sharedMaterial = wallMaterial != null
+                ? wallMaterial
+                : (_meshRenderer != null ? _meshRenderer.sharedMaterial : null);
+
+            if (!walls.TryGetComponent(out MeshCollider wallCollider))
+            {
+                wallCollider = walls.AddComponent<MeshCollider>();
+            }
+
+            wallCollider.sharedMesh = wallMesh;
+            wallCollider.convex = false;
+            wallCollider.sharedMaterial = wallPhysicsMaterial;
+        }
+
+        /// <summary>
+        /// Samples the spline and extrudes both track edges into a single closed wall mesh.
+        /// </summary>
+        private Mesh BuildWallMesh()
+        {
+            int segments = Mathf.Max(16, wallResolution);
+            int sampleCount = segments + 1;
+
+            float innerOffset = Mathf.Max(0.01f, Width - wallInset);
+            float outerOffset = innerOffset + Mathf.Max(0.01f, wallThickness);
+            float skirt = Mathf.Max(0f, wallSkirtDepth);
+            float height = Mathf.Max(0.01f, wallHeight);
+
+            Vector3[] innerLeft = new Vector3[sampleCount];
+            Vector3[] outerLeft = new Vector3[sampleCount];
+            Vector3[] innerRight = new Vector3[sampleCount];
+            Vector3[] outerRight = new Vector3[sampleCount];
+            Vector3[] ups = new Vector3[sampleCount];
+            float[] distances = new float[sampleCount];
+
+            Vector3 previousPoint = Vector3.zero;
+
+            for (int i = 0; i < sampleCount; i++)
+            {
+                // The last sample wraps onto the first so the loop closes without a seam
+                float t = (i % segments) / (float)segments;
+
+                if (!Spline.Evaluate(t, out float3 position, out float3 tangent, out float3 up))
+                    return null;
+
+                // Same frame the mesh job uses, so the walls land exactly on the mesh edges
+                Vector3 point = position;
+                Vector3 side = math.normalize(math.cross(tangent, up));
+                Vector3 upDirection = math.normalize(up);
+
+                innerLeft[i] = point + side * innerOffset;
+                outerLeft[i] = point + side * outerOffset;
+                innerRight[i] = point - side * innerOffset;
+                outerRight[i] = point - side * outerOffset;
+                ups[i] = upDirection;
+                distances[i] = i == 0 ? 0f : distances[i - 1] + Vector3.Distance(previousPoint, point);
+                previousPoint = point;
+            }
+
+            List<Vector3> wallVertices = new List<Vector3>(sampleCount * 12);
+            List<Vector2> wallUVs = new List<Vector2>(sampleCount * 12);
+            List<int> wallTriangles = new List<int>(segments * 36);
+
+            AppendWall(innerLeft, outerLeft, ups, distances, segments, height, skirt, false, wallVertices, wallUVs, wallTriangles);
+            AppendWall(innerRight, outerRight, ups, distances, segments, height, skirt, true, wallVertices, wallUVs, wallTriangles);
+
+            Mesh mesh = new Mesh
+            {
+                name = WallsObjectName,
+                indexFormat = IndexFormat.UInt32
+            };
+
+            mesh.SetVertices(wallVertices);
+            mesh.SetUVs(0, wallUVs);
+            mesh.SetTriangles(wallTriangles, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            return mesh;
+        }
+
+        /// <summary>
+        /// Extrudes one track edge into an inner face, an outer face and a cap.
+        /// <paramref name="mirrored"/> flips the winding for the wall on the other side of the centre line.
+        /// </summary>
+        private void AppendWall(Vector3[] inner, Vector3[] outer, Vector3[] ups, float[] distances, int segments,
+            float height, float skirt, bool mirrored,
+            List<Vector3> wallVertices, List<Vector2> wallUVs, List<int> wallTriangles)
+        {
+            int sampleCount = segments + 1;
+            float verticalUV = (height + skirt) * wallUVScale;
+            float capUV = Mathf.Max(0.01f, wallThickness) * wallUVScale;
+
+            // Each face gets its own rail of vertices so the wall keeps hard edges where the faces meet
+            int innerBase = wallVertices.Count;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                wallVertices.Add(inner[i] - ups[i] * skirt);
+                wallVertices.Add(inner[i] + ups[i] * height);
+                wallUVs.Add(new Vector2(distances[i] * wallUVScale, 0f));
+                wallUVs.Add(new Vector2(distances[i] * wallUVScale, verticalUV));
+            }
+
+            int outerBase = wallVertices.Count;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                wallVertices.Add(outer[i] - ups[i] * skirt);
+                wallVertices.Add(outer[i] + ups[i] * height);
+                wallUVs.Add(new Vector2(distances[i] * wallUVScale, 0f));
+                wallUVs.Add(new Vector2(distances[i] * wallUVScale, verticalUV));
+            }
+
+            int capBase = wallVertices.Count;
+            for (int i = 0; i < sampleCount; i++)
+            {
+                wallVertices.Add(inner[i] + ups[i] * height);
+                wallVertices.Add(outer[i] + ups[i] * height);
+                wallUVs.Add(new Vector2(distances[i] * wallUVScale, 0f));
+                wallUVs.Add(new Vector2(distances[i] * wallUVScale, capUV));
+            }
+
+            for (int i = 0; i < segments; i++)
+            {
+                int current = 2 * i;
+                int next = 2 * (i + 1);
+
+                AddQuad(wallTriangles, innerBase + current, innerBase + current + 1, innerBase + next + 1, innerBase + next, mirrored);
+                AddQuad(wallTriangles, outerBase + current, outerBase + current + 1, outerBase + next + 1, outerBase + next, !mirrored);
+                AddQuad(wallTriangles, capBase + current, capBase + current + 1, capBase + next + 1, capBase + next, mirrored);
+            }
+        }
+
+        private static void AddQuad(List<int> wallTriangles, int v0, int v1, int v2, int v3, bool flip)
+        {
+            if (flip)
+            {
+                wallTriangles.Add(v0); wallTriangles.Add(v2); wallTriangles.Add(v1);
+                wallTriangles.Add(v0); wallTriangles.Add(v3); wallTriangles.Add(v2);
+            }
+
+            else
+            {
+                wallTriangles.Add(v0); wallTriangles.Add(v1); wallTriangles.Add(v2);
+                wallTriangles.Add(v0); wallTriangles.Add(v2); wallTriangles.Add(v3);
             }
         }
 

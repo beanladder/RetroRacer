@@ -1,9 +1,16 @@
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 using Track;
-using System.Linq;
+using UnityEngine;
 
+/// <summary>
+/// Spawns the grid, runs the race and keeps every driver's picture of the field up to date.
+///
+/// Position and progress are measured the same way for the player and for the AI: lap number
+/// plus how far around the lap the car is on the racing line. Previously the AI reported a
+/// lap-less 0..1 figure while the player reported lap plus checkpoint fraction, so an AI on its
+/// third lap could sort behind a player on its first.
+/// </summary>
 public class AIRaceManager : MonoBehaviour
 {
     [Header("AI Racers Configuration")]
@@ -11,199 +18,255 @@ public class AIRaceManager : MonoBehaviour
     [SerializeField] private List<GameObject> aiVehiclePrefabs;
     [SerializeField, Range(1, 10)] private int numberOfAIRacers = 3;
     [SerializeField] private float startingOffset = 15f;
-    
+
     [Header("AI Difficulty Settings")]
     [SerializeField, Range(0f, 1f)] private float minSkillLevel = 0.5f;
     [SerializeField, Range(0f, 1f)] private float maxSkillLevel = 0.9f;
     [SerializeField, Range(0f, 1f)] private float minAggressiveness = 0.3f;
     [SerializeField, Range(0f, 1f)] private float maxAggressiveness = 0.8f;
-    
+
     [Header("Rubber Banding")]
     [SerializeField, Range(0f, 1f), Tooltip("How strongly the rubber banding effect pulls cars together.")]
     private float rubberBandingStrength = 0.5f;
     [SerializeField, Tooltip("The max speed boost given to cars that are behind.")]
-    private float maxSpeedBoost = 1.2f; // 20% speed boost
+    private float maxSpeedBoost = 1.2f;
     [SerializeField, Tooltip("The max speed penalty given to the car in the lead.")]
-    private float maxSpeedPenalty = 0.9f; // 10% speed penalty
-    
+    private float maxSpeedPenalty = 0.9f;
+
     [Header("Race Game Mode")]
     [SerializeField, Range(1, 20)] private int numberOfLaps = 3;
     [SerializeField] private GameObject playerVehiclePrefab;
     [SerializeField] private bool spawnPlayer = true;
     [SerializeField] private string playerTag = "Player";
-    
+
     [Header("AI Car Appearance")]
     [SerializeField] private List<Material> aiCarMaterials = new List<Material>();
-    
-    private List<AIVehicleController> aiRacers = new List<AIVehicleController>();
-    private bool raceIsActive = false;
-    
-    // Position tracking
-    public List<AIVehicleController> SortedRacers { get; private set; } = new List<AIVehicleController>();
-    public Dictionary<AIVehicleController, int> CarPositions { get; private set; } = new Dictionary<AIVehicleController, int>();
-    private Dictionary<AIVehicleController, float> overtakeCooldowns = new Dictionary<AIVehicleController, float>();
-    
-    // Race state for all cars (AI + player)
-    private class RaceCarState {
+
+    [Header("Diagnostics")]
+    [SerializeField, Tooltip("Log grid, lap and position changes to the console.")]
+    private bool verboseLogging = false;
+
+    private class RaceCarState
+    {
         public GameObject car;
+        public RaceParticipant participant;
+        public AIVehicleController aiController;
         public int currentLap = 1;
         public int lastCheckpoint = -1;
-        public bool finished = false;
-        public float finishTime = 0f;
-        public int position = 0;
-        public AIVehicleController aiController; // Reference to AI controller if it's an AI car
+        public bool finished;
+        public float finishTime;
+        public int position;
+        public float progress;
     }
-    private List<RaceCarState> raceCars = new List<RaceCarState>();
-    private RaceCarState playerState = null;
-    private bool raceFinished = false;
-    private float raceStartTime = 0f;
-    private int totalCheckpoints = 0;
-    
+
+    private readonly List<AIVehicleController> aiRacers = new List<AIVehicleController>();
+    private readonly List<RaceCarState> raceCars = new List<RaceCarState>();
+    private readonly Dictionary<GameObject, RaceCarState> stateByCar = new Dictionary<GameObject, RaceCarState>();
+    private readonly List<RaceParticipant> participants = new List<RaceParticipant>();
+
+    private readonly List<Transform> checkpoints = new List<Transform>();
+    private readonly Dictionary<Transform, int> checkpointIndex = new Dictionary<Transform, int>();
+    private Transform startFinishLine;
+
+    private AITrackData track;
+    private float startLineArcLength;
+
+    private RaceCarState playerState;
+    private bool raceIsActive;
+    private bool raceFinished;
+    private float raceStartTime;
+
+    /// <summary>Cars in running order, best first.</summary>
+    public List<AIVehicleController> SortedRacers { get; private set; } = new List<AIVehicleController>();
+
+    /// <summary>Current position of each AI car, counted from 1.</summary>
+    public Dictionary<AIVehicleController, int> CarPositions { get; private set; } = new Dictionary<AIVehicleController, int>();
+
+    /// <summary>Every car in the race, AI and player alike.</summary>
+    public IReadOnlyList<RaceParticipant> Participants => participants;
+
+    /// <summary>The player's car, or null when the race is all AI.</summary>
+    public GameObject PlayerCar => playerState?.car;
+
+    /// <summary>
+    /// Index into <see cref="Participants"/> that the debug HUD and spectator camera currently
+    /// focus on. Kept here rather than in either of those so both stay in lock step: cycling the
+    /// HUD's focus is exactly what the spectator camera orbits.
+    /// </summary>
+    public int FocusIndex { get; private set; }
+
+    /// <summary>The currently focused participant, or null when the grid has not spawned yet.</summary>
+    public RaceParticipant FocusedParticipant()
+    {
+        if (participants.Count == 0) return null;
+
+        FocusIndex = ((FocusIndex % participants.Count) + participants.Count) % participants.Count;
+        return participants[FocusIndex];
+    }
+
+    /// <summary>Steps the focus to the next participant and returns it.</summary>
+    public RaceParticipant CycleFocus(int direction = 1)
+    {
+        if (participants.Count == 0) return null;
+
+        FocusIndex += direction;
+        return FocusedParticipant();
+    }
+
     private void Start()
     {
-        // Find track generator if not assigned
         if (trackGenerator == null)
         {
             trackGenerator = FindFirstObjectByType<TrackGenerator>();
             if (trackGenerator == null)
             {
-                Debug.LogError("No TrackGenerator found in scene. AI race manager will not function properly.");
+                Debug.LogError("[AIRaceManager] No TrackGenerator in the scene; the race cannot start.");
                 enabled = false;
                 return;
             }
         }
-        
-        // Wait for track generation to complete before spawning AI racers
+
         StartCoroutine(SpawnAIRacersWhenReady());
         StartCoroutine(UpdatePositionsRoutine());
         StartCoroutine(PeriodicOvertakeOrders());
-        
-        // Count checkpoints for lap logic
-        totalCheckpoints = 0;
-        foreach (Transform child in trackGenerator.transform)
-        {
-            if (child.CompareTag("Checkpoint")) totalCheckpoints++;
-        }
     }
-    
+
+    // ---------------------------------------------------------------- setup
+
     private IEnumerator SpawnAIRacersWhenReady()
     {
-        // Wait for track generation to complete
-        yield return new WaitForSeconds(2f); // Give time for track generation to complete
-        
-        // Make sure racing line is generated
-        if (trackGenerator.RacingLine == null || trackGenerator.RacingLine.Points.Count == 0)
+        // The track generator builds mesh, checkpoints and racing line across several frames
+        float timeout = Time.time + 15f;
+        while (Time.time < timeout)
         {
-            Debug.LogWarning("No racing line found on track. AI racers will not be spawned.");
+            if (trackGenerator.RacingLine != null && trackGenerator.RacingLine.Points.Count > 8) break;
+            yield return new WaitForSeconds(0.25f);
+        }
+
+        if (trackGenerator.RacingLine == null || trackGenerator.RacingLine.Points.Count <= 8)
+        {
+            Debug.LogWarning("[AIRaceManager] No racing line on the track; AI racers will not be spawned.");
             yield break;
         }
-        
-        SpawnAIRacers();
 
-        // Start the race with a countdown
+        // The line may have been regenerated since anything last looked at it
+        AITrackData.Invalidate(trackGenerator);
+        track = AITrackData.For(trackGenerator);
+
+        CacheTrackFeatures();
+        SpawnAIRacers();
+        BindParticipants();
+
         StartCoroutine(StartRaceCountdown());
     }
-    
+
+    private void CacheTrackFeatures()
+    {
+        checkpoints.Clear();
+        checkpointIndex.Clear();
+        startFinishLine = null;
+
+        foreach (Transform child in trackGenerator.transform)
+        {
+            if (child.CompareTag("Checkpoint"))
+            {
+                checkpointIndex[child] = checkpoints.Count;
+                checkpoints.Add(child);
+            }
+            else if (child.name == "StartFinishLine")
+            {
+                startFinishLine = child;
+            }
+        }
+
+        // Measure lap progress from the start line rather than from racing line point zero,
+        // otherwise progress jumps backwards somewhere in the middle of the lap.
+        startLineArcLength = 0f;
+        if (track != null && startFinishLine != null)
+        {
+            int index = track.Localize(startFinishLine.position, 0, track.Count / 2);
+            startLineArcLength = track.ArcLengthAt(index, startFinishLine.position);
+        }
+    }
+
     private void SpawnAIRacers()
     {
         if (aiVehiclePrefabs == null || aiVehiclePrefabs.Count == 0)
         {
-            Debug.LogError("AI vehicle prefabs list is not assigned or is empty!");
+            Debug.LogError("[AIRaceManager] No AI vehicle prefabs assigned.");
             return;
         }
-        
-        // Clear any existing AI racers
+
         foreach (var racer in aiRacers)
         {
-            if (racer != null)
-            {
-                Destroy(racer.gameObject);
-            }
+            if (racer != null) Destroy(racer.gameObject);
         }
+
         aiRacers.Clear();
-        
-        // Clear race state
         raceCars.Clear();
+        stateByCar.Clear();
+        participants.Clear();
         playerState = null;
         raceFinished = false;
-        
-        // Find the Start/Finish Line
-        Transform startFinishLine = null;
-        foreach (Transform child in trackGenerator.transform)
+
+        Vector3 startPosition;
+        Vector3 startDirection;
+
+        if (startFinishLine != null)
         {
-            if (child.name == "StartFinishLine")
-            {
-                startFinishLine = child;
-                break;
-            }
+            startPosition = FindGroundPosition(startFinishLine.position);
+            startDirection = startFinishLine.forward;
         }
-        
-        if (startFinishLine == null)
+        else
         {
-            Debug.LogWarning("Start/Finish Line not found! Falling back to racing line start position.");
-            // Fallback to original racing line method
-            Vector3 fallbackPosition = trackGenerator.transform.TransformPoint(trackGenerator.RacingLine.Points[0]);
-            Vector3 fallbackDirection = trackGenerator.transform.TransformPoint(trackGenerator.RacingLine.Points[5]) - fallbackPosition;
-            fallbackDirection.y = 0;
-            fallbackDirection.Normalize();
-            SpawnCarsAtPosition(fallbackPosition, fallbackDirection);
-            return;
+            Debug.LogWarning("[AIRaceManager] No start/finish line found; falling back to the racing line.");
+            startPosition = trackGenerator.transform.TransformPoint(trackGenerator.RacingLine.Points[0]);
+            startDirection = trackGenerator.transform.TransformPoint(trackGenerator.RacingLine.Points[5]) - startPosition;
         }
-        
-        // Get position and orientation from the Start/Finish Line
-        Vector3 startPosition = startFinishLine != null ? startFinishLine.position : trackGenerator.transform.TransformPoint(trackGenerator.RacingLine.Points[0]);
-        Vector3 startDirection = startFinishLine != null ? startFinishLine.forward : (trackGenerator.transform.TransformPoint(trackGenerator.RacingLine.Points[5]) - startPosition).normalized;
-        startDirection.y = 0;
-        startDirection.Normalize();
-        
-        // Find ground level at the start position
-        Vector3 groundPosition = FindGroundPosition(startPosition);
-        
-        SpawnCarsAtPosition(groundPosition, startDirection);
+
+        startDirection.y = 0f;
+        startDirection = startDirection.sqrMagnitude > 1e-4f ? startDirection.normalized : Vector3.forward;
+
+        SpawnCarsAtPosition(startPosition, startDirection);
     }
-    
+
     private Vector3 FindGroundPosition(Vector3 startPosition)
     {
-        // Raycast downward to find the ground
-        RaycastHit hit;
-        if (Physics.Raycast(startPosition + Vector3.up * 10f, Vector3.down, out hit, 20f))
+        if (Physics.Raycast(startPosition + Vector3.up * 10f, Vector3.down, out RaycastHit hit, 40f, ~0, QueryTriggerInteraction.Ignore))
         {
-            return hit.point + Vector3.up * 0.5f; // Slight offset above ground
+            return hit.point + Vector3.up * 0.5f;
         }
-        
-        // Fallback: use the start position but at a reasonable height
+
         return new Vector3(startPosition.x, startPosition.y - 2f, startPosition.z);
     }
-    
+
     private void SpawnCarsAtPosition(Vector3 startPosition, Vector3 startDirection)
     {
         Vector3 sideDirection = Vector3.Cross(startDirection, Vector3.up);
-        int carsPerRow = 2;
-        float rowSpacing = 12f;
-        float colSpacing = 6f;
-        int totalCars = numberOfAIRacers + (spawnPlayer && playerVehiclePrefab != null ? 1 : 0);
-        
-        // Randomize player position in the grid
-        int playerGridPosition = -1;
-        if (spawnPlayer && playerVehiclePrefab != null)
-        {
-            playerGridPosition = Random.Range(0, totalCars);
-        }
-        
+        const int carsPerRow = 2;
+        const float rowSpacing = 12f;
+        const float colSpacing = 6f;
+
+        bool wantsPlayer = spawnPlayer && playerVehiclePrefab != null;
+        int totalCars = numberOfAIRacers + (wantsPlayer ? 1 : 0);
+        int playerGridPosition = wantsPlayer ? Random.Range(0, totalCars) : -1;
+
         int aiIndex = 0;
-        int carIndex = 0;
+
         for (int i = 0; i < totalCars; i++)
         {
             int row = i / carsPerRow;
             int col = i % carsPerRow;
+
             Vector3 rowOffset = -startDirection * (row * rowSpacing + startingOffset);
-            float gridCenterOffset = (carsPerRow - 1) * 0.5f;
-            Vector3 colOffset = sideDirection * (col - gridCenterOffset) * colSpacing;
-            Vector3 position = startPosition + rowOffset + colOffset;
-            position.y += 0.5f;
+            Vector3 colOffset = sideDirection * (col - (carsPerRow - 1) * 0.5f) * colSpacing;
+            Vector3 position = startPosition + rowOffset + colOffset + Vector3.up * 0.5f;
             Quaternion rotation = Quaternion.LookRotation(startDirection);
-            GameObject carObj = null;
-            bool isPlayer = (spawnPlayer && playerVehiclePrefab != null && i == playerGridPosition);
+
+            bool isPlayer = i == playerGridPosition;
+            GameObject carObj;
+            AIVehicleController ai = null;
+
             if (isPlayer)
             {
                 carObj = Instantiate(playerVehiclePrefab, position, rotation);
@@ -212,676 +275,435 @@ public class AIRaceManager : MonoBehaviour
             }
             else
             {
-                GameObject prefabToSpawn = aiVehiclePrefabs[Random.Range(0, aiVehiclePrefabs.Count)];
-                carObj = Instantiate(prefabToSpawn, position, rotation);
-                carObj.name = $"AI_Racer_{aiIndex+1}";
-                
-                // Assign a unique material if available
-                if (aiCarMaterials != null && aiCarMaterials.Count > 0)
-                {
-                    bool materialApplied = false;
-                    
-                    // Try to find the Body child object
-                    Transform body = carObj.transform.Find("Body");
-                    if (body != null)
-                    {
-                        Renderer rend = body.GetComponent<Renderer>();
-                        if (rend != null)
-                        {
-                            Material mat = aiCarMaterials[aiIndex % aiCarMaterials.Count];
-                            rend.material = mat;
-                            materialApplied = true;
-                            Debug.Log($"[AIRaceManager] Applied material {mat.name} to {carObj.name} Body renderer");
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"[AIRaceManager] Body object found but no Renderer component on {carObj.name}");
-                        }
-                    }
-                    else
-                    {
-                        // If Body not found, try to find any child with a Renderer
-                        Renderer[] renderers = carObj.GetComponentsInChildren<Renderer>();
-                        if (renderers.Length > 0)
-                        {
-                            // Find the main body renderer (usually the largest one)
-                            Renderer mainRenderer = renderers[0];
-                            float maxVolume = 0f;
-                            
-                            foreach (var rend in renderers)
-                            {
-                                if (rend.bounds.size.x * rend.bounds.size.y * rend.bounds.size.z > maxVolume)
-                                {
-                                    maxVolume = rend.bounds.size.x * rend.bounds.size.y * rend.bounds.size.z;
-                                    mainRenderer = rend;
-                                }
-                            }
-                            
-                            Material mat = aiCarMaterials[aiIndex % aiCarMaterials.Count];
-                            mainRenderer.material = mat;
-                            materialApplied = true;
-                            Debug.Log($"[AIRaceManager] Applied material {mat.name} to {carObj.name} main renderer ({mainRenderer.name})");
-                        }
-                        else
-                        {
-                            Debug.LogWarning($"[AIRaceManager] No Body object or renderers found on {carObj.name}");
-                        }
-                    }
-                    
-                    if (!materialApplied)
-                    {
-                        Debug.LogError($"[AIRaceManager] Failed to apply material to {carObj.name} - no suitable renderer found");
-                    }
-                }
-                else
-                {
-                    Debug.LogWarning("[AIRaceManager] No AI car materials assigned in inspector");
-                }
-                
-                // Ensure AIVehicleController is present
-                var aiController = carObj.GetComponent<AIVehicleController>();
-                if (aiController == null)
-                {
-                    aiController = carObj.AddComponent<AIVehicleController>();
-                }
+                GameObject prefab = aiVehiclePrefabs[Random.Range(0, aiVehiclePrefabs.Count)];
+                carObj = Instantiate(prefab, position, rotation);
+                carObj.name = $"AI_Racer_{aiIndex + 1}";
+
+                ApplyMaterialToAICar(carObj, aiIndex);
+
+                ai = carObj.GetComponent<AIVehicleController>();
+                if (ai == null) ai = carObj.AddComponent<AIVehicleController>();
+
+                ai.trackGenerator = trackGenerator;
+                ai.RaceManager = this;
+                ai.IsRacing = false;
+                ai.isMischiefCar = Random.value < 0.25f;
+                ConfigureDifficulty(ai, aiIndex);
+
+                aiRacers.Add(ai);
                 aiIndex++;
             }
-            // Add to race state
-            var state = new RaceCarState { car = carObj };
+
+            var participant = new RaceParticipant(carObj, ai, isPlayer);
+            var state = new RaceCarState { car = carObj, participant = participant, aiController = ai };
+
+            participants.Add(participant);
             raceCars.Add(state);
+            stateByCar[carObj] = state;
             if (isPlayer) playerState = state;
-            
-            // Add CarTriggerHandler component to handle fall/checkpoint detection
+
             var triggerHandler = carObj.GetComponent<CarTriggerHandler>();
-            if (triggerHandler == null)
-            {
-                triggerHandler = carObj.AddComponent<CarTriggerHandler>();
-            }
+            if (triggerHandler == null) triggerHandler = carObj.AddComponent<CarTriggerHandler>();
             triggerHandler.raceManager = this;
-            
-            // Configure AI controller if present
-            var aiControllerConfig = carObj.GetComponent<AIVehicleController>();
-            if (aiControllerConfig != null && !isPlayer)
-            {
-                aiControllerConfig.trackGenerator = trackGenerator;
-                SetRandomDifficulty(aiControllerConfig, aiIndex-1);
-                aiControllerConfig.IsRacing = false;
-                aiControllerConfig.isMischiefCar = (Random.value < 0.4f);
-                aiRacers.Add(aiControllerConfig);
-                state.aiController = aiControllerConfig; // Store reference to AI controller
-            }
-            carIndex++;
         }
-        
-        // After all cars are spawned, update AI cars' otherVehicles list to include all cars
-        StartCoroutine(UpdateAICarListsAfterDelay());
+
+        if (verboseLogging) Debug.Log($"[AIRaceManager] Grid formed with {raceCars.Count} cars.");
     }
-    
-    private IEnumerator UpdateAICarListsAfterDelay()
+
+    private void BindParticipants()
     {
-        yield return new WaitForSeconds(0.5f); // Wait for all cars to be fully initialized
-        
-        // Get all AI cars and update their otherVehicles list
-        foreach (var aiCar in aiRacers)
+        // Every driver shares one list and skips its own entry, so adding the player to the
+        // field costs nothing and the AI can finally see the car it is racing against.
+        foreach (var state in raceCars)
         {
-            if (aiCar != null)
-            {
-                // Use reflection to access the private otherVehicles field
-                var otherVehiclesField = typeof(AIVehicleController).GetField("otherVehicles", 
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                
-                if (otherVehiclesField != null)
-                {
-                    var otherVehicles = new List<AIVehicleController>();
-                    
-                    // Add all other AI cars
-                    foreach (var otherAI in aiRacers)
-                    {
-                        if (otherAI != null && otherAI != aiCar)
-                        {
-                            otherVehicles.Add(otherAI);
-                        }
-                    }
-                    
-                    // Add player car if it exists and has an AIVehicleController (for consistency)
-                    if (playerState != null && playerState.car != null)
-                    {
-                        var playerAI = playerState.car.GetComponent<AIVehicleController>();
-                        if (playerAI != null)
-                        {
-                            otherVehicles.Add(playerAI);
-                        }
-                    }
-                    
-                    otherVehiclesField.SetValue(aiCar, otherVehicles);
-                }
-            }
+            state.aiController?.SetParticipants(participants, state.participant);
+        }
+
+        RefreshParticipantPositions();
+
+        // Default the debug focus to an AI car rather than whatever landed in slot 0. The grid
+        // position is randomised when spawnPlayer is on, so without this the player could easily
+        // be first in the list — and every focused-car debug tool (gizmos, F4 sensor lines) would
+        // silently have nothing to draw until F2 was pressed enough times to reach an AI car.
+        FocusIndex = participants.FindIndex(p => p.Ai != null);
+        if (FocusIndex < 0) FocusIndex = 0;
+    }
+
+    private void ConfigureDifficulty(AIVehicleController ai, int racerIndex)
+    {
+        float normalized = numberOfAIRacers > 1 ? racerIndex / (float)(numberOfAIRacers - 1) : 0f;
+        float skill = Mathf.Lerp(maxSkillLevel, minSkillLevel, normalized) + Random.Range(-0.08f, 0.08f);
+        skill = Mathf.Clamp(skill, Mathf.Min(minSkillLevel, maxSkillLevel), Mathf.Max(minSkillLevel, maxSkillLevel));
+
+        float aggression = Random.Range(Mathf.Min(minAggressiveness, maxAggressiveness), Mathf.Max(minAggressiveness, maxAggressiveness));
+
+        ai.ConfigureDifficulty(skill, aggression);
+    }
+
+    // ---------------------------------------------------------------- per-step field state
+
+    private void FixedUpdate()
+    {
+        if (track == null || participants.Count == 0) return;
+        RefreshParticipantPositions();
+    }
+
+    /// <summary>
+    /// Projects every car onto the racing line once per physics step. Doing it here rather than
+    /// inside each driver turns an N-squared problem into a linear one and gives all the AI a
+    /// consistent view of the field.
+    /// </summary>
+    private void RefreshParticipantPositions()
+    {
+        for (int i = 0; i < participants.Count; i++)
+        {
+            RaceParticipant participant = participants[i];
+            if (!participant.IsAlive) continue;
+
+            // A racing AI localises itself as part of driving and writes the result back here,
+            // so only cars that are not doing that for themselves need projecting
+            if (participant.Ai != null && participant.Ai.IsRacing) continue;
+
+            Vector3 position = participant.Position;
+            int index = track.Localize(position, participant.LineIndex);
+            participant.LineIndex = index;
+            participant.ArcLength = track.ArcLengthAt(index, position);
+            participant.LateralOffset = Vector3.Dot(position - track.Points[index], track.Right[index]);
+        }
+    }
+
+    /// <summary>Lap plus fraction of a lap, measured from the start line. Comparable across all cars.</summary>
+    private float TotalProgress(RaceCarState state)
+    {
+        float lapFraction = 0f;
+        if (track != null && state.participant.IsAlive)
+        {
+            lapFraction = track.Wrap(state.participant.ArcLength - startLineArcLength) / track.TotalLength;
+        }
+
+        float progress = (state.currentLap - 1) + lapFraction;
+        return float.IsNaN(progress) ? 0f : progress;
+    }
+
+    // ---------------------------------------------------------------- race flow
+
+    private IEnumerator StartRaceCountdown()
+    {
+        for (int count = 3; count > 0; count--)
+        {
+            if (verboseLogging) Debug.Log($"<color=yellow>{count}...</color>");
+            yield return new WaitForSeconds(1f);
+        }
+
+        if (verboseLogging) Debug.Log("<color=green>GO!</color>");
+
+        raceStartTime = Time.time;
+        foreach (var racer in aiRacers)
+        {
+            if (racer != null) racer.IsRacing = true;
+        }
+
+        if (!raceIsActive)
+        {
+            raceIsActive = true;
+            StartCoroutine(UpdateRubberBanding());
         }
     }
 
     private IEnumerator UpdatePositionsRoutine()
     {
+        var wait = new WaitForSeconds(0.2f);
         while (true)
         {
             UpdateRacePositions();
-            yield return new WaitForSeconds(1f);
+            yield return wait;
         }
     }
 
     private void UpdateRacePositions()
     {
-        // Create a list of all cars with their progress
-        var allCarsWithProgress = new List<(RaceCarState state, float progress)>();
-        
-        foreach (var state in raceCars)
+        if (raceCars.Count == 0) return;
+
+        // Snapshot progress first: a comparator that recomputes it is both slower and, if a
+        // value ever came back NaN, capable of throwing out of Sort.
+        foreach (var state in raceCars) state.progress = TotalProgress(state);
+
+        raceCars.Sort((a, b) =>
         {
-            if (state.finished) continue;
-            
-            float progress = 0f;
-            if (state.aiController != null)
-            {
-                // AI car - use AI progress
-                progress = state.aiController.RaceProgress;
-            }
-            else if (state.car != null)
-            {
-                // Player car - calculate progress based on lap and checkpoint
-                progress = (state.currentLap - 1) + (state.lastCheckpoint + 1) / (float)totalCheckpoints;
-            }
-            
-            allCarsWithProgress.Add((state, progress));
-        }
-        
-        // Sort by progress (highest first)
-        allCarsWithProgress.Sort((a, b) => b.progress.CompareTo(a.progress));
-        
-        // Update positions
+            // Finished cars are locked into the order they crossed the line
+            if (a.finished && b.finished) return a.finishTime.CompareTo(b.finishTime);
+            if (a.finished) return -1;
+            if (b.finished) return 1;
+            return b.progress.CompareTo(a.progress);
+        });
+
         CarPositions.Clear();
         SortedRacers.Clear();
-        
-        for (int i = 0; i < allCarsWithProgress.Count; i++)
+
+        for (int i = 0; i < raceCars.Count; i++)
         {
-            var (state, progress) = allCarsWithProgress[i];
+            RaceCarState state = raceCars[i];
             state.position = i + 1;
-            
-            if (state.aiController != null)
-            {
-                CarPositions[state.aiController] = i + 1;
-                SortedRacers.Add(state.aiController);
-            }
+
+            if (state.aiController == null) continue;
+            CarPositions[state.aiController] = i + 1;
+            SortedRacers.Add(state.aiController);
         }
-        
-        // Debug log for positions
-        string posLog = "[RaceManager] Positions: ";
-        for (int i = 0; i < allCarsWithProgress.Count; i++)
-        {
-            var (state, progress) = allCarsWithProgress[i];
-            string carName = state.aiController != null ? state.aiController.gameObject.name : state.car.name;
-            posLog += $"{i+1}:{carName} ";
-        }
-        Debug.Log(posLog);
     }
 
-    private IEnumerator StartRaceCountdown()
-    {
-        yield return new WaitForSeconds(1.0f);
-        Debug.Log("<color=yellow>3...</color>");
-        yield return new WaitForSeconds(1.0f);
-        Debug.Log("<color=yellow>2...</color>");
-        yield return new WaitForSeconds(1.0f);
-        Debug.Log("<color=yellow>1...</color>");
-        yield return new WaitForSeconds(1.0f);
-        Debug.Log("<color=green>GO!</color>");
-
-        raceStartTime = Time.time;
-        // Enable racing for all AI
-        foreach(var racer in aiRacers)
-        {
-            if (racer != null)
-            {
-                racer.IsRacing = true;
-            }
-        }
-        // Optionally, send event to player car to enable control
-
-        // Now that the race has officially started, begin the rubber banding updates.
-        if (!raceIsActive)
-        {
-            StartCoroutine(UpdateRubberBanding());
-            raceIsActive = true;
-        }
-    }
-    
     private IEnumerator UpdateRubberBanding()
     {
+        var wait = new WaitForSeconds(1f);
+
         while (true)
         {
-            // Wait for a short interval before recalculating.
-            yield return new WaitForSeconds(1.0f); 
+            yield return wait;
+            if (aiRacers.Count == 0) continue;
 
-            if (aiRacers.Count < 1) continue;
+            float leadProgress = float.MinValue;
+            float secondProgress = float.MinValue;
+            RaceCarState leader = null;
 
-            float leadProgress = 0f;
-            AIVehicleController leader = null;
-
-            // Find the leader among all cars (AI + player)
             foreach (var state in raceCars)
             {
                 if (state.finished) continue;
-                
-                float progress = 0f;
-                if (state.aiController != null)
-                {
-                    progress = state.aiController.RaceProgress;
-                }
-                else if (state.car != null)
-                {
-                    // Player car progress
-                    progress = (state.currentLap - 1) + (state.lastCheckpoint + 1) / (float)totalCheckpoints;
-                }
-                
+
+                float progress = TotalProgress(state);
                 if (progress > leadProgress)
                 {
+                    secondProgress = leadProgress;
                     leadProgress = progress;
-                    leader = state.aiController; // leader will be null for player car
+                    leader = state;
+                }
+                else if (progress > secondProgress)
+                {
+                    secondProgress = progress;
                 }
             }
 
             if (leader == null) continue;
 
-            // Apply rubber banding to all AI cars
-            foreach (var racer in aiRacers)
+            foreach (var state in raceCars)
             {
-                float progressDifference = leadProgress - racer.RaceProgress;
-                
-                if (racer == leader)
+                if (state.aiController == null || state.finished) continue;
+
+                if (state == leader)
                 {
-                    // The leader gets slowed down based on how far they are from the car in 2nd place.
-                    float secondProgress = 0;
-                    foreach(var state in raceCars)
-                    {
-                        if (state.finished || state.aiController == leader) continue;
-                        
-                        float otherProgress = 0f;
-                        if (state.aiController != null)
-                        {
-                            otherProgress = state.aiController.RaceProgress;
-                        }
-                        else if (state.car != null)
-                        {
-                            otherProgress = (state.currentLap - 1) + (state.lastCheckpoint + 1) / (float)totalCheckpoints;
-                        }
-                        
-                        if (otherProgress > secondProgress)
-                        {
-                            secondProgress = otherProgress;
-                        }
-                    }
-                    float leadAdvantage = leadProgress - secondProgress;
-                    float penaltyFactor = Mathf.InverseLerp(0f, 0.1f, leadAdvantage); // 10% of track ahead
-                    racer.RubberBandingFactor = Mathf.Lerp(1f, maxSpeedPenalty, penaltyFactor * rubberBandingStrength);
+                    // Ease off out front, but only once the lead is big enough to be boring
+                    float advantage = secondProgress > float.MinValue ? leadProgress - secondProgress : 0f;
+                    float penalty = Mathf.InverseLerp(0f, 0.1f, advantage);
+                    state.aiController.RubberBandingFactor = Mathf.Lerp(1f, maxSpeedPenalty, penalty * rubberBandingStrength);
                 }
                 else
                 {
-                    // Other cars get a boost based on how far they are behind the leader.
-                    float boostFactor = Mathf.InverseLerp(0f, 0.2f, progressDifference); // 20% of track behind
-                    racer.RubberBandingFactor = Mathf.Lerp(1f, maxSpeedBoost, boostFactor * rubberBandingStrength);
+                    float deficit = leadProgress - TotalProgress(state);
+                    float boost = Mathf.InverseLerp(0f, 0.2f, deficit);
+                    state.aiController.RubberBandingFactor = Mathf.Lerp(1f, maxSpeedBoost, boost * rubberBandingStrength);
                 }
             }
         }
     }
-    
-    // Remove per-car overtaking coroutines and add a single periodic overtake order coroutine
+
     private IEnumerator PeriodicOvertakeOrders()
     {
+        var wait = new WaitForSeconds(10f);
+
         while (true)
         {
-            yield return new WaitForSeconds(10f);
-            if (!raceIsActive) continue;
-            if (SortedRacers.Count < 2) continue;
-            
-            // Get all cars sorted by position (including player)
-            var allCarsWithProgress = new List<(RaceCarState state, float progress)>();
-            foreach (var state in raceCars)
+            yield return wait;
+            if (!raceIsActive || raceCars.Count < 2) continue;
+
+            // raceCars is already in running order from UpdateRacePositions
+            for (int i = 1; i < raceCars.Count; i++)
             {
-                if (state.finished) continue;
-                
-                float progress = 0f;
-                if (state.aiController != null)
-                {
-                    progress = state.aiController.RaceProgress;
-                }
-                else if (state.car != null)
-                {
-                    progress = (state.currentLap - 1) + (state.lastCheckpoint + 1) / (float)totalCheckpoints;
-                }
-                
-                allCarsWithProgress.Add((state, progress));
-            }
-            
-            allCarsWithProgress.Sort((a, b) => b.progress.CompareTo(a.progress));
-            
-            // Order cars to overtake the car ahead of them
-            for (int i = 1; i < allCarsWithProgress.Count; i++)
-            {
-                var currentState = allCarsWithProgress[i].state;
-                var aheadState = allCarsWithProgress[i - 1].state;
-                
-                // Only AI cars can be ordered to overtake
-                if (currentState.aiController != null)
-                {
-                    if (aheadState.aiController != null)
-                    {
-                        // AI overtaking AI
-                        Debug.Log($"[RaceManager] {currentState.aiController.gameObject.name} (P{i+1}) ordered to overtake {aheadState.aiController.gameObject.name} (P{i})");
-                        currentState.aiController.ForceOvertake(aheadState.aiController);
-                    }
-                    else if (aheadState.car != null && aheadState.car.CompareTag(playerTag))
-                    {
-                        // AI overtaking player
-                        Debug.Log($"[RaceManager] {currentState.aiController.gameObject.name} (P{i+1}) ordered to overtake Player (P{i})");
-                        // Note: Player doesn't have an AIVehicleController, so we can't use ForceOvertake
-                        // The AI will naturally try to overtake the player through its normal logic
-                    }
-                }
+                RaceCarState chaser = raceCars[i];
+                RaceCarState ahead = raceCars[i - 1];
+
+                if (chaser.finished || chaser.aiController == null || ahead.aiController == null) continue;
+
+                // Only nudge cars that are actually within reach of the one in front
+                float gap = track != null
+                    ? track.SignedGap(chaser.participant.ArcLength, ahead.participant.ArcLength)
+                    : 0f;
+
+                if (gap > 0f && gap < 80f) chaser.aiController.ForceOvertake(ahead.aiController);
             }
         }
-    }
-    
-    private void SetRandomDifficulty(AIVehicleController aiController, int racerIndex)
-    {
-        // Access the serialized fields using reflection
-        var skillField = aiController.GetType().GetField("skillLevel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        var aggressivenessField = aiController.GetType().GetField("aggressiveness", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        
-        if (skillField != null && aggressivenessField != null)
-        {
-            // Calculate skill level - lead cars are generally more skilled
-            float normalizedIndex = (float)racerIndex / Mathf.Max(1, numberOfAIRacers - 1);
-            float skillLevel = Mathf.Lerp(maxSkillLevel, minSkillLevel, normalizedIndex);
-            
-            // Add some randomness
-            skillLevel += Random.Range(-0.1f, 0.1f);
-            skillLevel = Mathf.Clamp(skillLevel, minSkillLevel, maxSkillLevel);
-            
-            // Calculate aggressiveness - random for each car
-            float aggressiveness = Random.Range(minAggressiveness, maxAggressiveness);
-            
-            // Set values
-            skillField.SetValue(aiController, skillLevel);
-            aggressivenessField.SetValue(aiController, aggressiveness);
-        }
-    }
-    
-    // Method to reset race (can be called from other scripts)
-    public void ResetRace()
-    {
-        StartCoroutine(SpawnAIRacersWhenReady());
-    }
-    
-    // Public method to get current race positions for all cars
-    public List<(string carName, int position, float progress)> GetCurrentPositions()
-    {
-        var positions = new List<(string carName, int position, float progress)>();
-        
-        foreach (var state in raceCars)
-        {
-            if (state.finished) continue;
-            
-            float progress = 0f;
-            if (state.aiController != null)
-            {
-                // AI car - use AI progress
-                progress = state.aiController.RaceProgress;
-            }
-            else if (state.car != null)
-            {
-                // Player car - calculate progress based on lap and checkpoint
-                progress = (state.currentLap - 1) + (state.lastCheckpoint + 1) / (float)totalCheckpoints;
-            }
-            
-            string carName = state.aiController != null ? state.aiController.gameObject.name : state.car.name;
-            positions.Add((carName, state.position, progress));
-        }
-        
-        // Sort by position
-        positions.Sort((a, b) => a.position.CompareTo(b.position));
-        return positions;
     }
 
-    // --- Checkpoint and Lap Logic ---
-    // Note: OnTriggerEnter removed from here since AIRaceManager doesn't have a Collider
-    // Fall detection is now handled by individual car components
+    // ---------------------------------------------------------------- triggers
 
-    // Public method to handle fall detection (called from car components)
+    /// <summary>Called by a car that fell off the world or drove somewhere it cannot recover from.</summary>
     public void HandleCarFall(GameObject car)
     {
-        var state = raceCars.Find(s => s.car == car);
-        if (state == null || state.finished) return;
-        
-        // Teleport to last checkpoint
-        if (state.lastCheckpoint >= 0)
+        if (!stateByCar.TryGetValue(car, out RaceCarState state) || state.finished) return;
+
+        Vector3 position;
+        Quaternion rotation;
+
+        if (track != null)
         {
-            Transform checkpoint = GetCheckpointTransform(state.lastCheckpoint);
-            if (checkpoint != null)
-            {
-                car.transform.position = checkpoint.position + Vector3.up * 2f;
-                car.transform.rotation = checkpoint.rotation;
-                Debug.Log($"{car.name} fell! Teleported to checkpoint {state.lastCheckpoint}");
-            }
+            // Put the car back on the racing line where it left it, rather than at whichever
+            // checkpoint gate happened to be last: much less jarring, and always the right way round.
+            track.Sample(state.participant.ArcLength + 5f, state.participant.LineIndex,
+                out Vector3 linePoint, out Vector3 lineForward, out _);
+            position = linePoint + Vector3.up * 3f;
+            rotation = Quaternion.LookRotation(lineForward, Vector3.up);
+        }
+        else if (state.lastCheckpoint >= 0 && state.lastCheckpoint < checkpoints.Count)
+        {
+            position = checkpoints[state.lastCheckpoint].position + Vector3.up * 3f;
+            rotation = checkpoints[state.lastCheckpoint].rotation;
+        }
+        else if (startFinishLine != null)
+        {
+            position = startFinishLine.position + Vector3.up * 3f;
+            rotation = startFinishLine.rotation;
         }
         else
         {
-            // If no checkpoint reached yet, teleport to start
-            Transform startFinishLine = null;
-            foreach (Transform child in trackGenerator.transform)
-            {
-                if (child.name == "StartFinishLine")
-                {
-                    startFinishLine = child;
-                    break;
-                }
-            }
-            if (startFinishLine != null)
-            {
-                car.transform.position = startFinishLine.position + Vector3.up * 2f;
-                car.transform.rotation = startFinishLine.rotation;
-                Debug.Log($"{car.name} fell! Teleported to start line (no checkpoint reached)");
-            }
+            return;
         }
+
+        car.transform.SetPositionAndRotation(position, rotation);
+
+        // Without this the car keeps whatever velocity it had while falling
+        if (state.participant.Body != null)
+        {
+            state.participant.Body.linearVelocity = Vector3.zero;
+            state.participant.Body.angularVelocity = Vector3.zero;
+        }
+
+        state.aiController?.OnRespawned();
+
+        if (verboseLogging) Debug.Log($"[AIRaceManager] {car.name} recovered to the racing line.");
     }
 
-    // Public method to handle checkpoint detection (called from car components)
+    /// <summary>Called when a car passes through a checkpoint gate.</summary>
     public void HandleCheckpoint(GameObject car, Transform checkpoint)
     {
-        var state = raceCars.Find(s => s.car == car);
-        if (state == null || state.finished) return;
-        
-        int checkpointIndex = GetCheckpointIndex(checkpoint);
-        if (checkpointIndex != -1 && checkpointIndex != state.lastCheckpoint)
-        {
-            state.lastCheckpoint = checkpointIndex;
-            Debug.Log($"{car.name} reached checkpoint {checkpointIndex}");
-        }
+        if (!stateByCar.TryGetValue(car, out RaceCarState state) || state.finished) return;
+        if (!checkpointIndex.TryGetValue(checkpoint, out int index)) return;
+
+        if (index != state.lastCheckpoint) state.lastCheckpoint = index;
     }
 
-    // Public method to handle start/finish line detection (called from car components)
+    /// <summary>Called when a car crosses the start/finish line.</summary>
     public void HandleStartFinish(GameObject car)
     {
-        var state = raceCars.Find(s => s.car == car);
-        if (state == null || state.finished) return;
-        
-        // Only count lap if all checkpoints were crossed
-        if (state.lastCheckpoint == totalCheckpoints-1)
-        {
-            state.currentLap++;
-            state.lastCheckpoint = -1;
-            Debug.Log($"{car.name} completed lap {state.currentLap - 1}!");
-            if (state.currentLap > numberOfLaps)
-            {
-                state.finished = true;
-                state.finishTime = Time.time - raceStartTime;
-                Debug.Log($"{car.name} FINISHED! Time: {state.finishTime:F2}s");
-                
-                // Stop the car when it finishes
-                StopCar(car);
-                
-                // Check if all cars have finished
-                CheckRaceCompletion();
-            }
-        }
+        if (!stateByCar.TryGetValue(car, out RaceCarState state) || state.finished) return;
+        if (checkpoints.Count == 0 || state.lastCheckpoint != checkpoints.Count - 1) return;
+
+        state.currentLap++;
+        state.lastCheckpoint = -1;
+
+        if (verboseLogging) Debug.Log($"[AIRaceManager] {car.name} completed lap {state.currentLap - 1}.");
+        if (state.currentLap <= numberOfLaps) return;
+
+        state.finished = true;
+        state.finishTime = Time.time - raceStartTime;
+        Debug.Log($"[AIRaceManager] {car.name} finished in {state.finishTime:F2}s.");
+
+        StopCar(car);
+        CheckRaceCompletion();
     }
 
     private void StopCar(GameObject car)
     {
-        // Stop AI cars
-        var aiController = car.GetComponent<AIVehicleController>();
-        if (aiController != null)
-        {
-            aiController.StopCar();
-        }
-        
-        // For player car, you might want to disable input or show a message
-        if (car.CompareTag(playerTag))
-        {
-            Debug.Log("Player has finished the race!");
-            // You can add UI logic here to show race completion
-        }
-    }
-    
-    private void CheckRaceCompletion()
-    {
-        bool allFinished = true;
-        foreach (var state in raceCars)
-        {
-            if (!state.finished)
-            {
-                allFinished = false;
-                break;
-            }
-        }
-        
-        if (allFinished && !raceFinished)
-        {
-            raceFinished = true;
-            Debug.Log("ALL CARS HAVE FINISHED! Race complete!");
-            
-            // Stop all remaining cars
-            foreach (var state in raceCars)
-            {
-                if (state.car != null)
-                {
-                    StopCar(state.car);
-                }
-            }
-            
-            // Stop the race manager updates
-            raceIsActive = false;
-        }
+        var ai = car.GetComponent<AIVehicleController>();
+        ai?.StopCar();
     }
 
-    private int GetCheckpointIndex(Transform checkpoint)
+    private void CheckRaceCompletion()
     {
-        int idx = 0;
-        foreach (Transform child in trackGenerator.transform)
+        foreach (var state in raceCars)
         {
-            if (child.CompareTag("Checkpoint"))
-            {
-                if (child == checkpoint) return idx;
-                idx++;
-            }
+            if (!state.finished) return;
         }
-        return -1;
+
+        if (raceFinished) return;
+
+        raceFinished = true;
+        raceIsActive = false;
+        Debug.Log("[AIRaceManager] Race complete.");
     }
-    private Transform GetCheckpointTransform(int index)
+
+    // ---------------------------------------------------------------- queries
+
+    /// <summary>Current running order, best first.</summary>
+    public List<(string carName, int position, float progress)> GetCurrentPositions()
     {
-        int idx = 0;
-        foreach (Transform child in trackGenerator.transform)
+        var results = new List<(string carName, int position, float progress)>();
+
+        foreach (var state in raceCars)
         {
-            if (child.CompareTag("Checkpoint"))
-            {
-                if (idx == index) return child;
-                idx++;
-            }
+            if (state.car == null) continue;
+            results.Add((state.car.name, state.position, TotalProgress(state)));
         }
-        return null;
+
+        results.Sort((a, b) => a.position.CompareTo(b.position));
+        return results;
     }
-    
-    // Public method to apply materials to an existing AI car
+
+    /// <summary>Tears down the current grid and starts a fresh race on the current track.</summary>
+    public void ResetRace()
+    {
+        StopAllCoroutines();
+        raceIsActive = false;
+        raceFinished = false;
+        StartCoroutine(SpawnAIRacersWhenReady());
+        StartCoroutine(UpdatePositionsRoutine());
+        StartCoroutine(PeriodicOvertakeOrders());
+    }
+
+    // ---------------------------------------------------------------- appearance
+
+    /// <summary>Paints one AI car in its livery. Picks the largest renderer when there is no Body child.</summary>
     public void ApplyMaterialToAICar(GameObject carObj, int materialIndex = -1)
     {
-        if (aiCarMaterials == null || aiCarMaterials.Count == 0)
-        {
-            Debug.LogWarning("[AIRaceManager] No AI car materials assigned in inspector");
-            return;
-        }
-        
+        if (aiCarMaterials == null || aiCarMaterials.Count == 0 || carObj == null) return;
+
         if (materialIndex < 0)
         {
-            // Find the car in our AI racers list to get its index
-            materialIndex = aiRacers.FindIndex(ai => ai.gameObject == carObj);
-            if (materialIndex < 0)
-            {
-                Debug.LogWarning($"[AIRaceManager] Car {carObj.name} not found in AI racers list");
-                return;
-            }
+            materialIndex = aiRacers.FindIndex(ai => ai != null && ai.gameObject == carObj);
+            if (materialIndex < 0) return;
         }
-        
-        Material mat = aiCarMaterials[materialIndex % aiCarMaterials.Count];
-        bool materialApplied = false;
-        
-        // Try to find the Body child object
+
+        Material material = aiCarMaterials[materialIndex % aiCarMaterials.Count];
+        Renderer target = null;
+
         Transform body = carObj.transform.Find("Body");
-        if (body != null)
+        if (body != null) target = body.GetComponent<Renderer>();
+
+        if (target == null)
         {
-            Renderer rend = body.GetComponent<Renderer>();
-            if (rend != null)
+            float largest = 0f;
+            foreach (var renderer in carObj.GetComponentsInChildren<Renderer>())
             {
-                rend.material = mat;
-                materialApplied = true;
-                Debug.Log($"[AIRaceManager] Applied material {mat.name} to {carObj.name} Body renderer");
+                Vector3 size = renderer.bounds.size;
+                float volume = size.x * size.y * size.z;
+                if (volume <= largest) continue;
+
+                largest = volume;
+                target = renderer;
             }
         }
-        
-        if (!materialApplied)
+
+        if (target == null)
         {
-            // Fallback: find any renderer
-            Renderer[] renderers = carObj.GetComponentsInChildren<Renderer>();
-            if (renderers.Length > 0)
-            {
-                Renderer mainRenderer = renderers[0];
-                float maxVolume = 0f;
-                
-                foreach (var rend in renderers)
-                {
-                    if (rend.bounds.size.x * rend.bounds.size.y * rend.bounds.size.z > maxVolume)
-                    {
-                        maxVolume = rend.bounds.size.x * rend.bounds.size.y * rend.bounds.size.z;
-                        mainRenderer = rend;
-                    }
-                }
-                
-                mainRenderer.material = mat;
-                materialApplied = true;
-                Debug.Log($"[AIRaceManager] Applied material {mat.name} to {carObj.name} main renderer ({mainRenderer.name})");
-            }
+            Debug.LogWarning($"[AIRaceManager] No renderer to paint on {carObj.name}.");
+            return;
         }
-        
-        if (!materialApplied)
-        {
-            Debug.LogError($"[AIRaceManager] Failed to apply material to {carObj.name} - no suitable renderer found");
-        }
+
+        target.material = material;
     }
-    
-    // Public method to refresh materials for all AI cars
+
+    /// <summary>Repaints every AI car, for when the livery list changes at runtime.</summary>
     public void RefreshAllAICarMaterials()
     {
         for (int i = 0; i < aiRacers.Count; i++)
         {
-            if (aiRacers[i] != null)
-            {
-                ApplyMaterialToAICar(aiRacers[i].gameObject, i);
-            }
+            if (aiRacers[i] != null) ApplyMaterialToAICar(aiRacers[i].gameObject, i);
         }
     }
 }

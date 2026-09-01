@@ -177,6 +177,7 @@ if (cinemachineCamera == null)
 
         void FixedUpdate()
         {
+            carVelocity = rb.linearVelocity;
             localVehicleVelocity = transform.InverseTransformDirection(rb.linearVelocity);
             driftAngle = Mathf.Abs(Vector3.Angle(transform.forward, Vector3.ProjectOnPlane(rb.linearVelocity, transform.up)));
 

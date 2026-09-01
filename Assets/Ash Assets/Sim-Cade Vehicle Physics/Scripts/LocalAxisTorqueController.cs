@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class LocalAxisTorqueController : MonoBehaviour
 {
@@ -19,11 +20,11 @@ public class LocalAxisTorqueController : MonoBehaviour
     void FixedUpdate()
     {
         // Check for player input and apply torque accordingly
-        if (Input.GetKey(rotateLeftKey))
+        if (IsKeyPressed(rotateLeftKey))
         {
             ApplyTorque(-torqueAmount);
         }
-        else if (Input.GetKey(rotateRightKey))
+        else if (IsKeyPressed(rotateRightKey))
         {
             ApplyTorque(torqueAmount);
         }
@@ -33,5 +34,25 @@ public class LocalAxisTorqueController : MonoBehaviour
     {
         // Apply torque in the local up axis
         rb.AddTorque(transform.up * amount, ForceMode.Acceleration);
+    }
+
+    private bool IsKeyPressed(KeyCode keyCode)
+    {
+        if (Keyboard.current == null) return false;
+        
+        Key key = ConvertKeyCodeToKey(keyCode);
+        if (key == Key.None) return false;
+        
+        return Keyboard.current[key].isPressed;
+    }
+
+    private Key ConvertKeyCodeToKey(KeyCode keyCode)
+    {
+        switch (keyCode)
+        {
+            case KeyCode.Q: return Key.Q;
+            case KeyCode.E: return Key.E;
+            default: return Key.None;
+        }
     }
 }

@@ -34,6 +34,14 @@ public class TrackGeneratorEditor : UnityEditor.Editor
                 Debug.LogWarning("Generate in Play mode!");
         }
 
+        if (GUILayout.Button(new GUIContent("Generate Walls", "Rebuild only the edge walls")))
+        {
+            if (Application.isPlaying)
+                _trackGenerator.GenerateWalls();
+            else
+                Debug.LogWarning("Generate in Play mode!");
+        }
+
         EditorGUILayout.Space();
 
         if (GUILayout.Button(new GUIContent("Save as Prefab", "Save generated track as prefab")))
@@ -95,6 +103,7 @@ public class TrackGeneratorEditor : UnityEditor.Editor
         int seedNumber = GetNextSeedNumber();
         string baseName = $"TrackSeed{seedNumber}";
         string visualMeshName = $"{baseName}_VisualMesh";
+        string wallMeshName = $"{baseName}_WallMesh";
         string prefabName = $"{baseName}_Track";
 
         // Save the visual mesh
@@ -109,6 +118,18 @@ public class TrackGeneratorEditor : UnityEditor.Editor
         visualMesh.name = visualMeshName;
         string visualMeshPath = System.IO.Path.Combine("Assets/Meshes", $"{visualMeshName}.asset");
         AssetDatabase.CreateAsset(visualMesh, visualMeshPath);
+
+        // Save the wall mesh too, otherwise the prefab would keep a runtime-only mesh reference
+        Mesh loadedWallMesh = null;
+        Transform wallSource = trackObject.transform.Find(TrackGenerator.WallsObjectName);
+        if (wallSource != null && wallSource.TryGetComponent(out MeshFilter wallFilter) && wallFilter.sharedMesh != null)
+        {
+            Mesh wallMesh = Instantiate(wallFilter.sharedMesh);
+            wallMesh.name = wallMeshName;
+            string wallMeshPath = System.IO.Path.Combine("Assets/Meshes", $"{wallMeshName}.asset");
+            AssetDatabase.CreateAsset(wallMesh, wallMeshPath);
+            loadedWallMesh = AssetDatabase.LoadAssetAtPath<Mesh>(wallMeshPath);
+        }
 
         // Handle spline data
         SplineContainer splineContainer = trackObject.GetComponent<SplineContainer>();
@@ -130,6 +151,20 @@ public class TrackGeneratorEditor : UnityEditor.Editor
             prefabCollider.sharedMesh = loadedVisualMesh;
         }
 
+        // Point the prefab's walls at the saved wall mesh
+        if (loadedWallMesh != null)
+        {
+            Transform wallInstance = prefabInstance.transform.Find(TrackGenerator.WallsObjectName);
+            if (wallInstance != null)
+            {
+                if (wallInstance.TryGetComponent<MeshFilter>(out var instanceWallFilter))
+                    instanceWallFilter.sharedMesh = loadedWallMesh;
+
+                if (wallInstance.TryGetComponent<MeshCollider>(out var instanceWallCollider))
+                    instanceWallCollider.sharedMesh = loadedWallMesh;
+            }
+        }
+
         // Save as prefab
         string prefabPath = System.IO.Path.Combine("Assets/Prefabs/Tracks", $"{prefabName}.prefab");
         PrefabUtility.SaveAsPrefabAsset(prefabInstance, prefabPath);
@@ -139,6 +174,7 @@ public class TrackGeneratorEditor : UnityEditor.Editor
         AssetDatabase.Refresh();
         DestroyImmediate(prefabInstance);
 
-        Debug.Log($"Saved track assets:\n- Prefab: {prefabPath}\n- Mesh: {visualMeshPath}");
+        string wallReport = loadedWallMesh != null ? $"\n- Wall Mesh: {AssetDatabase.GetAssetPath(loadedWallMesh)}" : string.Empty;
+        Debug.Log($"Saved track assets:\n- Prefab: {prefabPath}\n- Mesh: {visualMeshPath}{wallReport}");
     }
 }
